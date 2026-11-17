@@ -1,0 +1,3 @@
+# Runtime dependencies (installed automatically by the start scripts)
+reportlab>=4.0,<6      # PDF reports — BSD license
+certifi>=2024.2.2      # trusted HTTPS certificates — MPL-2.0

@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MTG Commander Deck Tester</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#E8ECF1; --panel:#F7F9FB; --ink:#1C2033; --muted:#5B6478; --line:#CBD2DC;
+  --blue:#2F6FDE; --blue-ink:#fff; --gold:#C59A1C; --silver:#8C96A3; --bronze:#A6693A; --slate:#4E566A;
+  --bad:#B4372F; --good:#2E7D4F; --field:#DDE3EA;
+  --head:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
+  --body:"Atkinson Hyperlegible",system-ui,-apple-system,sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#12151C; --panel:#1B1F29; --ink:#E7EAF0; --muted:#9AA3B5; --line:#2E3443;
+  --blue:#5B8FF0; --blue-ink:#0E1220; --field:#262C39; --bad:#E36A5F; --good:#5CC48A;
+  color-scheme:dark;
+}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 var(--body)}
+header{display:flex;align-items:center;gap:16px;padding:14px 28px;border-bottom:1px solid var(--line)}
+header h1{font:700 30px/1 var(--head);margin:0;letter-spacing:.01em}
+header .sub{color:var(--muted);font-size:14px}
+header .grow{flex:1}
+#history{width:auto;max-width:280px}
+button,select,input,textarea{font:inherit;color:inherit}
+button{cursor:pointer;border:1px solid var(--line);background:var(--panel);border-radius:6px;padding:8px 14px}
+button:hover{border-color:var(--ink)}
+button.primary{background:var(--blue);color:var(--blue-ink);border-color:var(--blue);font-weight:700;padding:12px 18px;width:100%;font-size:17px}
+button:disabled{opacity:.5;cursor:not-allowed}
+:focus-visible{outline:3px solid var(--blue);outline-offset:2px}
+main{display:grid;grid-template-columns:minmax(320px,420px) 1fr;gap:24px;padding:24px 28px;align-items:start}
+@media (max-width:900px){main{grid-template-columns:1fr;padding:16px}}
+section.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:18px}
+h2{font:600 22px/1.1 var(--head);margin:0 0 12px}
+h3{font:600 18px/1.2 var(--head);margin:22px 0 8px}
+label{display:block;font-weight:700;font-size:14px;margin:12px 0 4px}
+.hint{color:var(--muted);font-size:13px;margin:4px 0 0}
+textarea,input[type=text],input[type=password],input[type=number],select{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px 10px}
+textarea{min-height:220px;font-size:13px;resize:vertical}
+.row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.check{display:flex;gap:8px;align-items:flex-start;font-weight:400;font-size:15px;margin:10px 0}
+.check input{margin-top:4px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.chip{border:1px solid var(--line);border-radius:999px;padding:2px 10px;font-size:13px}
+.chip.warn{border-color:var(--bad);color:var(--bad)}
+.msg{font-size:14px;margin:8px 0 0}
+.msg.err{color:var(--bad)}
+#parsed{margin-top:10px;font-size:14px}
+.progress{height:10px;background:var(--field);border-radius:5px;overflow:hidden;margin:10px 0}
+.progress div{height:100%;background:var(--blue);width:0;transition:width .4s}
+#log{font:13px/1.45 ui-monospace,Menlo,monospace;background:var(--bg);border-radius:6px;padding:10px;max-height:230px;overflow:auto;white-space:pre-wrap;margin:0}
+.empty{color:var(--muted);text-align:center;padding:50px 10px}
+.empty strong{display:block;font:600 26px var(--head);color:var(--ink);margin-bottom:6px}
+.result-top{display:flex;gap:28px;align-items:flex-end;flex-wrap:wrap}
+.big{font:700 76px/0.9 var(--head)}
+.big small{font-size:28px;color:var(--muted);font-weight:500}
+.pods{display:flex;flex-wrap:wrap;gap:14px;margin-top:8px}
+.pod{width:150px;text-align:center;font-size:12px;color:var(--muted)}
+.pod svg{display:block;margin:0 auto 4px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:var(--head);font-weight:600;font-size:15px}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+tr.me td{font-weight:700}
+.better{color:var(--good)} .worse{color:var(--bad)}
+.weak{border-left:4px solid var(--bad);padding:6px 12px;margin:8px 0;background:var(--bg);border-radius:0 6px 6px 0}
+.weak b{display:block}
+ul{padding-left:20px;margin:6px 0} li{margin:3px 0}
+.scroll{overflow-x:auto}
+details summary{cursor:pointer;font:600 18px var(--head);margin:18px 0 6px}
+.md h1,.md h2,.md h3{font-family:var(--head);margin:16px 0 6px}
+.md table{margin:8px 0}
+a{color:var(--blue)}
+dialog{border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink);max-width:520px;width:92vw;padding:22px}
+dialog::backdrop{background:rgba(10,12,20,.45)}
+.actions{display:flex;gap:10px;justify-content:flex-end;margin-top:16px}
+.report-actions{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 14px}
+.btn{display:inline-block;border:1px solid var(--line);background:var(--panel);border-radius:6px;padding:8px 14px;color:var(--ink);text-decoration:none}
+.btn:hover{border-color:var(--ink)}
+.btn.primary-link{background:var(--blue);border-color:var(--blue);color:var(--blue-ink);font-weight:700}
+.demo-banner{background:var(--gold);color:#1C2033;padding:6px 28px;font-size:14px}
+@media (prefers-reduced-motion:reduce){.progress div{transition:none}}
+</style>
+</head>
+<body>
+<div id="demoBanner" class="demo-banner" hidden>Demo mode: games are simulated with fake results so you can try the app. Forge is not used.</div>
+<header>
+  <div>
+    <h1>MTG Commander Deck Tester</h1>
+    <div class="sub">Commander test tournaments played by Forge’s AI</div>
+  </div>
+  <div class="grow"></div>
+  <select id="history" aria-label="Past reports"><option value="">Past reports</option></select>
+  <button id="openSettings">Settings</button>
+</header>
+
+<main>
+  <div>
+    <section class="panel">
+      <h2>Your deck</h2>
+      <label for="deck">Decklist</label>
+      <textarea id="deck" placeholder="Archidekt: Export → Text → Copy. Moxfield: Export → copy the list (enter your commander below if it isn’t found).&#10;&#10;1x Krenko, Mob Boss (rvr) 112 [Commander{top}]&#10;1x Sol Ring (cmm) 410 [Ramp]&#10;..."></textarea>
+      <div class="row" style="grid-template-columns:1fr 1fr">
+        <div><label for="deckName">Deck name (optional)</label>
+        <input type="text" id="deckName" placeholder="e.g. Ureni Dragons"></div>
+        <div><label for="commander">Commander (if not tagged)</label>
+      <input type="text" id="commander" placeholder="e.g. Krenko, Mob Boss"></div>
+      </div>
+      <div style="margin-top:12px"><button id="checkDeck">Check deck</button></div>
+      <div id="parsed"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Tournament</h2>
+      <div class="row">
+        <div><label for="bracket">Bracket</label>
+          <select id="bracket"><option value="">Auto</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></div>
+        <div><label for="field">Decks</label>
+          <select id="field"><option>8</option><option selected>12</option><option>16</option></select></div>
+        <div><label for="rounds">Rounds</label>
+          <select id="rounds"><option>3</option><option>4</option><option selected>5</option><option>6</option><option>8</option><option>10</option></select></div>
+      </div>
+      <label class="check"><input type="checkbox" id="fast"> <span>Only play my pods<br><span class="hint">About 3× faster. You still get your pod places, but no overall standing.</span></span></label>
+      <label class="check"><input type="checkbox" id="strong"> <span>Stronger AI<br><span class="hint">Forge looks further ahead. Slower; needs a recent Forge version.</span></span></label>
+      <label class="check"><input type="checkbox" id="useAi"> <span>Coaching notes from Claude<br><span class="hint" id="aiHint">Needs a Claude API key in Settings. Stats-based tips are always included.</span></span></label>
+      <label for="links">Specific opponents (optional)</label>
+      <textarea id="links" style="min-height:64px" placeholder="Archidekt or Moxfield deck links, one per line. The rest is found automatically."></textarea>
+      <p class="hint" id="sourcesHint"></p>
+      <p class="hint" id="estimate"></p>
+      <div style="margin-top:14px"><button class="primary" id="start">Start test tournament</button></div>
+    </section>
+  </div>
+
+  <div>
+    <section class="panel" id="statusPanel" hidden>
+      <h2 id="statusTitle">Running</h2>
+      <div class="progress"><div id="bar"></div></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+        <span class="hint" id="count"></span>
+        <button id="cancel">Stop</button>
+      </div>
+      <pre id="log"></pre>
+    </section>
+    <section class="panel" id="report">
+      <div class="empty"><strong>No test run yet</strong>Paste your decklist, choose a bracket and start a tournament. Results show up here.</div>
+    </section>
+  </div>
+</main>
+
+<dialog id="settings">
+  <h2>Settings</h2>
+  <label for="forgeFolder">Forge folder</label>
+  <input type="text" id="forgeFolder" placeholder="/Users/you/Forge">
+  <p class="hint">The folder you unpacked Forge into (it has forge.sh and a res folder). Tip: drag the folder into this box from Finder.</p>
+  <div style="margin-top:8px"><button id="checkForge">Check Forge and Java</button></div>
+  <div id="forgeMsg" class="msg"></div>
+  <div class="row" style="grid-template-columns:1fr 1fr">
+    <div><label for="workers">Games at once</label><input type="number" id="workers" min="1" max="8">
+      <p class="hint">Each game uses ~4 GB RAM. 2 is good for 16 GB Macs.</p></div>
+    <div><label for="clock">Time limit per game (s)</label><input type="number" id="clock" min="120" step="60">
+      <p class="hint">Unfinished games count as a draw.</p></div>
+  </div>
+  <label for="apiKey">Claude API key (optional)</label>
+  <input type="password" id="apiKey" placeholder="sk-ant-...">
+  <p class="hint" id="keyState"></p>
+  <label for="model">Claude model</label>
+  <input type="text" id="model">
+  <label for="moxUa">Moxfield User-Agent (optional)</label>
+  <input type="password" id="moxUa" placeholder="The string Moxfield gave you">
+  <p class="hint" id="moxState"></p>
+  <p class="hint">Moxfield only allows automated access with permission. Email support@moxfield.com to ask for a personal User-Agent; until then opponents come from Archidekt.</p>
+  <div class="actions"><button id="closeSettings">Cancel</button><button id="saveSettings" class="primary" style="width:auto">Save settings</button></div>
+</dialog>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const ord = n => ({1:"1st",2:"2nd",3:"3rd"}[n] || n + "th");
+const PLACE_COL = {1:"var(--gold)",2:"var(--silver)",3:"var(--bronze)",4:"var(--slate)"};
+async function api(path, body){
+  const r = await fetch(path, body === undefined ? {} : {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
+  const j = await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+
+// ---------- settings
+async function loadSettings(){
+  const s = await api("/api/settings");
+  $("#forgeFolder").value = s.forge_folder || "";
+  $("#workers").value = s.workers; $("#clock").value = s.clock; $("#model").value = s.model;
+  $("#keyState").textContent = s.api_key_set ? "A key is saved. Leave empty to keep it." : "No key saved.";
+  $("#moxState").textContent = s.moxfield_set ? "Saved. Leave empty to keep it." : "Not set.";
+  $("#sourcesHint").textContent = "Opponents come from popular decks on " + (s.moxfield_set ? "Archidekt and Moxfield" : "Archidekt") + ", with varied colour identities.";
+  $("#demoBanner").hidden = !s.demo;
+  return s;
+}
+$("#openSettings").onclick = async () => { await loadSettings(); $("#forgeMsg").textContent=""; $("#settings").showModal(); };
+$("#closeSettings").onclick = () => $("#settings").close();
+$("#checkForge").onclick = async () => {
+  $("#forgeMsg").textContent = "Checking…";
+  const r = await api("/api/check", {forge_folder: $("#forgeFolder").value.trim()});
+  $("#forgeMsg").className = "msg" + (r.ok ? "" : " err");
+  $("#forgeMsg").innerHTML = r.messages.map(esc).join("<br>");
+};
+$("#saveSettings").onclick = async () => {
+  const body = {forge_folder: $("#forgeFolder").value.trim().replace(/^'|'$/g,""), workers: +$("#workers").value || 1,
+                clock: +$("#clock").value || 600, model: $("#model").value.trim()};
+  if ($("#apiKey").value.trim()) body.api_key = $("#apiKey").value.trim();
+  if ($("#moxUa").value.trim()) body.moxfield_user_agent = $("#moxUa").value.trim();
+  await api("/api/settings", body); $("#apiKey").value = ""; $("#moxUa").value = ""; settings = await loadSettings(); $("#settings").close(); updateEstimate();
+};
+
+// ---------- deck check
+$("#checkDeck").onclick = async () => {
+  $("#parsed").innerHTML = '<p class="hint">Looking up cards…</p>';
+  try {
+    const r = await api("/api/parse", {text: $("#deck").value, commander: $("#commander").value});
+    const p = r.profile;
+    let h = `<p><b>${esc(r.commanders.join(" & ") || "No commander found")}</b> · ${r.size} cards · estimated bracket ${r.bracket_estimate}</p>
+      <p class="hint">${esc(r.bracket_reason)}</p>
+      <div class="chips">${[["Lands",p.lands],["Ramp",p.ramp],["Draw",p.draw],["Removal",p.removal],["Wipes",p.wipes],["Creatures",p.creatures],["Avg MV",p.avg_cmc]]
+        .map(([k,v])=>`<span class="chip">${k} ${v}</span>`).join("")}</div>`;
+    if (p.game_changers.length) h += `<p class="hint">Game Changers: ${esc(p.game_changers.join(", "))}</p>`;
+    r.warnings.forEach(w => h += `<p class="msg err">${esc(w)}</p>`);
+    if (r.unknown.length) h += `<p class="msg err">Not recognised: ${esc(r.unknown.join(", "))}</p>`;
+    $("#parsed").innerHTML = h;
+  } catch(e){ $("#parsed").innerHTML = `<p class="msg err">${esc(e.message)}</p>`; }
+};
+
+// ---------- estimate
+let settings = {};
+function updateEstimate(){
+  const field = +$("#field").value, rounds = +$("#rounds").value, fast = $("#fast").checked;
+  const games = rounds * (fast ? 1 : field/4);
+  const workers = fast ? 1 : Math.min(settings.workers || 2, field/4);
+  const mins = Math.round(games * 4 / workers);
+  $("#estimate").textContent = `${games} games · roughly ${mins < 60 ? mins + " minutes" : (mins/60).toFixed(1) + " hours"} (Forge games take 2–6 minutes each).`;
+}
+["#field","#rounds","#fast"].forEach(s => $(s).addEventListener("change", updateEstimate));
+
+// ---------- run
+$("#start").onclick = async () => {
+  if (!$("#deck").value.trim()) { $("#parsed").innerHTML = '<p class="msg err">Paste your decklist first.</p>'; return; }
+  try {
+    await api("/api/start", {text:$("#deck").value, commander:$("#commander").value, deck_name:$("#deckName").value, bracket:$("#bracket").value,
+      field_size:+$("#field").value, rounds:+$("#rounds").value, fast:$("#fast").checked,
+      strong_ai:$("#strong").checked, use_ai:$("#useAi").checked, opponent_links:$("#links").value});
+    poll();
+  } catch(e){ alert(e.message); }
+};
+$("#cancel").onclick = () => api("/api/cancel", {});
+
+let polling = false;
+async function poll(){
+  if (polling) return; polling = true;
+  while (true) {
+    const s = await api("/api/status");
+    $("#statusPanel").hidden = s.state === "idle";
+    $("#start").disabled = s.state === "running";
+    $("#statusTitle").textContent = {running:"Tournament running", done:"Finished", error:"Something went wrong", cancelled:"Stopped"}[s.state] || "";
+    $("#bar").style.width = s.total ? (100*s.done/s.total) + "%" : "4%";
+    $("#count").textContent = s.total ? `${s.done} of ${s.total} games played` : "Preparing…";
+    $("#cancel").hidden = s.state !== "running";
+    const log = $("#log"); const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
+    log.textContent = s.log.join("\n"); if (atBottom) log.scrollTop = log.scrollHeight;
+    if (s.state !== "running") { polling = false; if (s.state === "done") { await loadHistory(); showReport(s.report_id); } return; }
+    await new Promise(r => setTimeout(r, 2000));
+  }
+}
+
+// ---------- report
+function podSvg(g, decks){
+  const pos = [[75,18],[132,75],[75,132],[18,75]];
+  let s = `<svg width="150" height="150" viewBox="0 0 150 150" role="img" aria-label="Round ${g.round} pod">
+    <rect x="38" y="38" width="74" height="74" rx="10" fill="var(--field)"/>
+    <text x="75" y="80" text-anchor="middle" font-family="Barlow Condensed, Arial Narrow, Arial, sans-serif" font-size="17" fill="var(--muted)">R${g.round}</text>`;
+  g.seats.forEach((d,i) => {
+    const p = g.players[d], [x,y] = pos[i], me = d === "D01";
+    s += `<g><title>${esc(decks[d].name)}: ${ord(p.place)}</title>
+      <circle cx="${x}" cy="${y}" r="${me?17:13}" fill="${PLACE_COL[p.place]}" ${me?'stroke="var(--blue)" stroke-width="4"':''}/>
+      <text x="${x}" y="${y+5}" text-anchor="middle" font-family="Barlow Condensed, Arial Narrow, Arial, sans-serif" font-weight="700" font-size="${me?17:14}" fill="#fff">${p.place}</text></g>`;
+  });
+  return s + "</svg>";
+}
+function md(t){
+  const lines = esc(t).split("\n"); let h = "", inList = false, inTable = false;
+  const inline = s => s.replace(/\*\*(.+?)\*\*/g,"<b>$1</b>").replace(/`(.+?)`/g,"<code>$1</code>");
+  for (const l of lines) {
+    if (/^\|/.test(l)) {
+      if (/^\|[\s:-|]+\|$/.test(l)) continue;
+      if (!inTable) { h += '<div class="scroll"><table>'; inTable = true; }
+      h += "<tr>" + l.slice(1,-1).split("|").map(c=>`<td>${inline(c.trim())}</td>`).join("") + "</tr>"; continue;
+    } else if (inTable) { h += "</table></div>"; inTable = false; }
+    if (/^\s*[-*] /.test(l)) { if(!inList){h+="<ul>";inList=true;} h += `<li>${inline(l.replace(/^\s*[-*] /,""))}</li>`; continue; }
+    if (inList) { h += "</ul>"; inList = false; }
+    const m = l.match(/^(#{1,4}) (.*)/);
+    if (m) h += `<h3>${inline(m[2])}</h3>`; else if (l.trim()) h += `<p>${inline(l)}</p>`;
+  }
+  if (inList) h += "</ul>"; if (inTable) h += "</table></div>";
+  return h;
+}
+const METRIC_LABELS = {place:["Average pod finish",false],lands_t4:["Lands by your turn 4",true],first_spell:["First spell (your turn)",false],
+  commander_turn:["Commander cast (your turn)",false],damage_dealt:["Damage dealt per game",true],damage_taken:["Damage taken per game",false],
+  mulligans:["Mulligans per game",false],spells_per_turn:["Spells per turn",true],survived:["Games survived to the end",true]};
+
+async function showReport(id){
+  let rep; try { rep = await api("/api/report" + (id ? "?id=" + encodeURIComponent(id) : "")); } catch(e){ return; }
+  const R = rep.results, A = rep.analysis, me = R.standings.find(s => s.id === "D01"), n = R.standings.length;
+  const myGames = R.games.filter(g => g.players.D01).sort((a,b)=>a.round-b.round);
+  const title = rep.deck.name && rep.deck.name !== "Your deck" ? rep.deck.name : rep.deck.commanders.join(" & ");
+  let h = `<h2>${esc(title)} · bracket ${rep.bracket}</h2><p class="hint">${esc(rep.created)}${rep.demo?" · demo data":""}</p>
+    <div class="report-actions"><a class="btn primary-link" href="/api/report.pdf?id=${encodeURIComponent(rep.id)}">Download PDF report</a>
+    <button data-open="${esc(rep.id)}">Show in folder</button>
+    <a class="btn" href="/api/report.md?id=${encodeURIComponent(rep.id)}">Markdown</a></div>
+    <div class="result-top">`;
+  if (!R.fast_mode) h += `<div><div class="big">${ord(me.rank)} <small>of ${n}</small></div><div class="hint">final standing · ${me.points} points</div></div>`;
+  h += `<div><div class="big">${me.avg_place} <small>avg</small></div><div class="hint">pod finish · ${me.wins} win${me.wins===1?"":"s"} in ${me.games} games</div></div></div>`;
+  h += `<h3>Your pods</h3><div class="pods">` + myGames.map(g => {
+      const p = g.players.D01, how = p.won ? "won" : (g.draw && !p.eliminated ? "time limit" : (p.loss_reason||"").replace(/^lost (because |due to )?/,""));
+      return `<div class="pod">${podSvg(g, R.decks)}${esc(how)}</div>`; }).join("") + `</div>
+      <p class="hint">Your seat has the blue ring. Gold 1st, silver 2nd, bronze 3rd, grey 4th.</p>`;
+
+  h += `<h3>Weak points</h3>` + (A.weak_points.length ? A.weak_points.map(w=>`<div class="weak"><b>${esc(w.title)}</b>${esc(w.detail)}</div>`).join("") : "<p>Nothing stood out as clearly weak.</p>");
+  if (A.strengths.length) h += `<h3>Strengths</h3><ul>${A.strengths.map(s=>`<li>${esc(s)}</li>`).join("")}</ul>`;
+  h += `<h3>How to improve</h3><ul>${A.suggestions.map(s=>`<li>${esc(s)}</li>`).join("") || "<li>Run more rounds for a clearer picture.</li>"}</ul>`;
+  if (A.cut_candidates.length) h += `<p><b>Cards to reconsider</b> (never cast during testing): ${A.cut_candidates.map(c=>esc(c.card)).join(", ")}</p>`;
+  if (A.add_candidates.length) h += `<p><b>Popular in similar decks, not in yours:</b> ${A.add_candidates.map(c=>`${esc(c.card)}${c.fits_need?" ★":""}`).join(", ")}</p><p class="hint">★ fits one of your weak points.</p>`;
+  if (rep.ai_text) h += `<h3>Coaching notes from Claude</h3><div class="md">${md(rep.ai_text)}</div>`;
+  if (rep.ai_error) h += `<p class="msg err">AI notes unavailable: ${esc(rep.ai_error)}</p>`;
+
+  h += `<h3>You vs. the field</h3><div class="scroll"><table><tr><th>Measure</th><th class="num">You</th><th class="num">Other decks</th></tr>`;
+  for (const [k,[label,higher]] of Object.entries(METRIC_LABELS)) {
+    const m = A.metrics[k]; if (!m || m.you == null) continue;
+    let v = m.you, f = m.field, cls = "";
+    if (f != null && Math.abs(v-f) > 0.05*Math.max(1,Math.abs(f))) cls = ((v>f) === higher) ? "better" : "worse";
+    if (k === "survived") { v = Math.round(v*100)+"%"; f = f==null?"–":Math.round(f*100)+"%"; }
+    h += `<tr><td>${label}</td><td class="num ${cls}">${v}</td><td class="num">${f ?? "–"}</td></tr>`;
+  }
+  h += `</table></div>`;
+  if (A.eliminated_by.length) h += `<p class="hint">Knocked out most often by: ${A.eliminated_by.map(([n,c])=>`${esc(n)} (${c}×)`).join(", ")}</p>`;
+
+  if (!R.fast_mode) {
+    h += `<h3>Standings</h3><div class="scroll"><table><tr><th>#</th><th>Deck</th><th class="num">Points</th><th>Pod finishes</th></tr>` +
+      R.standings.map(s=>`<tr class="${s.id==="D01"?"me":""}"><td>${s.rank}</td><td>${esc(s.name)}${s.id==="D01"?" (you)":""}</td><td class="num">${s.points}</td><td>${s.places.join(" ")}</td></tr>`).join("") + `</table></div>
+      <p class="hint">Points per game: 1st 4, 2nd 2, 3rd 1, 4th 0. Players still alive at the time limit get 1.</p>`;
+  }
+  h += `<details><summary>Card usage</summary><div class="scroll"><table><tr><th>Card</th><th class="num">MV</th><th class="num">Cast in games</th><th class="num">Avg place when cast</th></tr>` +
+    A.card_performance.slice().reverse().map(c=>`<tr><td>${esc(c.card)}</td><td class="num">${c.cmc??""}</td><td class="num">${c.cast_games}/${A.games_played}</td><td class="num">${c.avg_place_when_cast??"–"}</td></tr>`).join("") + `</table></div></details>`;
+  h += `<details><summary>Opponents</summary><ul>` + Object.entries(R.decks).filter(([k])=>k!=="D01").map(([k,d]) =>
+      `<li><a href="${esc(d.url)}" target="_blank" rel="noopener">${esc(d.name)}</a> · ${esc(d.commanders.join(" & "))} · ${esc(d.identity || "")} · bracket ${esc(d.bracket ?? "?")} · ${esc(d.source || "")}</li>`).join("") + `</ul></details>`;
+  if (R.errors.length) h += `<details><summary>Problems during the run</summary><pre id="errs" style="white-space:pre-wrap;font-size:12px">${esc(R.errors.join("\n\n"))}</pre></details>`;
+  const E = A.early_game;
+  if (E && E.n) {
+    const pct = (a,b) => b ? ` (${Math.round(100*a/b)}%)` : "";
+    const play = c => c == null ? '<span class="hint">didn’t get this turn</span>'
+      : (c.length ? `<span class="better"><b>Yes</b></span> – ${esc(c.join(", "))}` : '<span class="worse"><b>No</b></span>');
+    h += `<h3>Summary: opening hands and early plays</h3>
+      <ul><li>Non-land play on your turn 1: <b>${E.t1_play} of ${E.t1_games}</b> games${pct(E.t1_play,E.t1_games)}</li>
+      <li>Non-land play on your turn 2: <b>${E.t2_play} of ${E.t2_games}</b> games${pct(E.t2_play,E.t2_games)}</li>
+      <li>Both turns: <b>${E.both} of ${E.n}</b> games${pct(E.both,E.n)}</li>
+      <li>Average kept hand: ${E.avg_kept} cards${E.avg_lands_in_hand!=null?`, ${E.avg_lands_in_hand} lands`:""}</li></ul>
+      <div class="scroll"><table><tr><th>Round</th><th>Place</th><th>Kept opening hand</th><th>Turn 1</th><th>Turn 2</th></tr>` +
+      E.games.map(r => `<tr><td>${r.round}</td><td>${ord(r.place)}</td><td>${r.hand ? esc(r.hand_text) + `<br><span class="hint">${r.kept} cards, ${r.lands_in_hand} lands${r.mulligans?`, ${r.mulligans} mulligan${r.mulligans>1?"s":""}`:""}</span>` : `<span class="hint">not recorded · kept ${r.kept ?? "?"} cards</span>`}</td><td>${play(r.t1)}</td><td>${play(r.t2)}</td></tr>`).join("") +
+      `</table></div>`;
+    if (E.hands_recorded < E.n) h += `<p class="hint">Opening hands need a JDK (Java with its compiler); see the README.</p>`;
+  }
+  h += `<p class="hint">Forge’s AI is a decent but imperfect pilot, so treat single games as noise and look for patterns across rounds. More rounds give more reliable results.</p>`;
+  $("#report").innerHTML = h;
+  const ob = $("#report [data-open]");
+  if (ob) ob.onclick = () => api("/api/open-folder", {id: ob.dataset.open});
+}
+
+async function loadHistory(){
+  const list = await api("/api/reports");
+  $("#history").innerHTML = '<option value="">Past reports</option>' + list.map(r=>`<option value="${esc(r)}">${esc(r.replace("_"," ").replace(/_/g," "))}</option>`).join("");
+}
+$("#history").onchange = e => e.target.value && showReport(e.target.value);
+
+(async () => {
+  settings = await loadSettings(); updateEstimate(); await loadHistory();
+  const s = await api("/api/status"); if (s.state !== "idle") poll();
+  if (!settings.forge_folder && !settings.demo) { $("#forgeMsg").textContent = "Start by telling the app where Forge is."; $("#settings").showModal(); }
+})();
+</script>
+</body>
+</html>

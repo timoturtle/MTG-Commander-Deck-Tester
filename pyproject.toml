@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mtg-commander-deck-tester"
+version = "2.1.0"
+description = "Test Magic: The Gathering Commander decks in AI-played pod tournaments using Forge"
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+license-files = ["LICENSE"]
+dependencies = [
+    "reportlab>=4.0,<6",
+    "certifi>=2024.2.2",
+]
+keywords = ["magic-the-gathering", "mtg", "commander", "edh", "forge", "deck-testing"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Topic :: Games/Entertainment",
+]
+
+[project.scripts]
+mtg-deck-tester = "mtg_deck_tester.app:main"
+
+[tool.setuptools]
+packages = ["mtg_deck_tester"]
+
+[tool.setuptools.package-data]
+mtg_deck_tester = ["static/*", "java/*.java"]
