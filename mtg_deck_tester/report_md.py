@@ -64,8 +64,8 @@ def to_markdown(rep):
                                                            for a in CD["almost"][:6])]
         F = CD.get("field") or {}
         if F.get("opponents"):
-            out += ["", f"**Field:** {F['opponents_with_win_combos']} of {F['opponents']} opponents have a game-winning "
-                        f"combo; chance one of 3 opponents holds a counterspell by turn 6: {F['pod_counter_by_t6']}%."]
+            out += ["", f"**Field:** {F['avg_counters']} counterspells per opponent deck; chance one of 3 opponents "
+                        f"holds a counterspell by turn 6: {F['pod_counter_by_t6']}%."]
 
     if rep.get("ai_text"):
         out += ["", "## AI coach", "", rep["ai_text"]]

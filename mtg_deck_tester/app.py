@@ -155,7 +155,21 @@ def run_job(req):
             sources = [arch] + ([mox] if mox.enabled else [])
             if not mox.enabled:
                 job.say("Moxfield is off (no Moxfield User-Agent in Settings); using Archidekt.")
-            opps = opponents.pick(sources, deck, prof["identity"], bracket, need, CARD_DB, job.say, manual)
+            recent_file = os.path.join(CACHE, "recent_opponents.json")
+            try:
+                with open(recent_file, encoding="utf-8") as f:
+                    recent_runs = json.load(f)
+            except Exception:
+                recent_runs = []
+            recent = {k for run in recent_runs for k in run}
+            opps = opponents.pick(sources, deck, prof["identity"], bracket, need, CARD_DB, job.say, manual,
+                                  recent=recent)
+            keys = [getattr(o, "_key", None) for o in opps if getattr(o, "_key", None)]
+            try:
+                with open(recent_file, "w", encoding="utf-8") as f:
+                    json.dump((recent_runs + [keys])[-3:], f)  # remember the last 3 runs
+            except OSError:
+                pass
         if job.cancel.is_set():
             raise tournament.Cancelled()
         if len(opps) < 3:

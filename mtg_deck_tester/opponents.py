@@ -1,12 +1,14 @@
 """Pick a varied field of popular opponent decks.
 
 Rules:
-* popularity first (most-viewed decks on each site, sites interleaved by rank)
+* popular decks, picked at random with more popular decks more likely (sites interleaved)
+* decks you faced in your last few runs are much less likely to be picked again
 * same bracket as your deck (decks without a bracket set are only used if needed)
 * few colour-identity repeats: every identity gets one deck before any gets a second
 * at most one or two decks with your commander, no duplicate commanders otherwise
 * no copies of your own deck, only valid commanders, 98-101 cards
 """
+import random
 from collections import Counter
 
 MAX_FETCHES = 80
@@ -52,7 +54,7 @@ def _overlap(a, b):
     return len(sa & sb) / max(1, min(len(sa), len(sb)))
 
 
-def pick(sources, user_deck, user_identity, bracket, wanted, card_db, log, manual=()):
+def pick(sources, user_deck, user_identity, bracket, wanted, card_db, log, manual=(), recent=(), rng=None):
     """sources: list of objects with .search(commanders, bracket) and .fetch(ref)."""
     picked = list(manual)
     ids = Counter({frozenset(user_identity): 1})
@@ -75,8 +77,22 @@ def pick(sources, user_deck, user_identity, bracket, wanted, card_db, log, manua
             c.rank = i
         by_source.append((src, cands))
         log(f"  {src.name}: {len(cands)} candidate decks")
-    pool = sorted(((c.rank, n, c, src) for n, (src, cands) in enumerate(by_source) for c in cands),
-                  key=lambda t: (t[0], t[1]))
+    # weighted random order: popular decks are more likely to come first, but every run differs
+    rng = rng or random.Random()
+    recent = set(recent)
+
+    def order_key(c):
+        weight = 1.0 / (c.rank + 15)
+        if c.key in recent:
+            weight *= 0.08  # faced recently: rarely picked again
+        if c.from_commander_search:
+            weight *= 3
+        return rng.random() ** (1.0 / weight)
+    pool = sorted(((order_key(c), n, c, src) for n, (src, cands) in enumerate(by_source) for c in cands),
+                  key=lambda t: -t[0])
+    n_recent = sum(1 for _, _, c, _ in pool if c.key in recent)
+    if n_recent:
+        log(f"  {n_recent} of these were in your recent runs and are less likely to be picked")
 
     cache, rejected, fetches = {}, set(), 0
 

@@ -6,6 +6,7 @@ this module only runs when the user has entered one in Settings.
 """
 import json
 import os
+import random
 import re
 import urllib.parse
 
@@ -50,7 +51,7 @@ class Moxfield:
             return []
         self.log("Searching Moxfield for popular decks...")
         found = []
-        for page in range(1, pages + 1):
+        for page in [1] + sorted(random.sample(range(2, 11), pages - 1)):
             q = {"pageNumber": page, "pageSize": 64, "sortType": "views", "sortDirection": "descending",
                  "fmt": "commander", "board": "mainboard"}
             try:

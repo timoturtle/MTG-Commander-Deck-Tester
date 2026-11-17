@@ -40,7 +40,7 @@ final standing, your place in every pod, your deck's weak points and concrete su
 - **Deck makeup check**: lands, ramp, card draw, removal, board wipes and curve
 - **Combos and consistency**: every combo in your deck (from Commander Spellbook), how fast your
   deck assembles them when it plays towards them on purpose, combos you're one card away from,
-  combos above your bracket, and the combos and counterspells in the field
+  combos above your bracket, and the counterspells in the field
 - **Opening hands and early plays**: the hand your deck kept in every game, and whether it
   cast something other than a land on its turn 1 and turn 2
 - **Suggestions**: cards you never cast during testing, and cards that are popular in the
@@ -222,8 +222,10 @@ three times faster but gives no overall standing.
 
 ## How opponents are chosen
 
-1. **Popular first:** the most-viewed public Commander decks on Archidekt (and Moxfield, if enabled).
-   Recently edited but unknown decks are not used.
+1. **Popular, but varied:** the app looks at a few hundred of the most-viewed public Commander decks
+   on Archidekt (and Moxfield, if enabled) and picks at random among them, with more popular decks
+   more likely. Decks you faced in your last 3 runs are rarely picked again, so repeated runs see
+   different opponents. Recently edited but unknown decks are not used.
 2. **Same bracket:** only decks with your bracket. Decks without a bracket set are used only if
    there aren't enough.
 3. **Varied colours:** every colour identity gets one deck before any identity gets a second, and
@@ -246,8 +248,9 @@ they play. The report therefore adds a section that doesn't rely on Forge's AI:
 - **Forge check:** how often Forge's AI cast every piece of a winning combo and still didn't win.
 - **One card away:** combos you'd complete by adding one card, only in your colours and bracket.
 - **Above your bracket:** combos Commander Spellbook rates higher than the bracket you chose.
-- **The field:** which opponents have winning combos and how fast, how many counterspells they run,
-  and the chance one of three opponents holds a counterspell by turn 6.
+- **The field:** how many counterspells and instant-speed removal spells the opponents run, and the
+  chance one of three opponents holds a counterspell by turn 6. (Only your own deck is checked for
+  combos, which keeps runs quick.)
 
 The goldfish is an estimate: there are no opponents, and card effects are simplified to ramp, card
 draw, tutors and the combo pieces. Use it to compare versions of your deck rather than as a promise.
@@ -334,7 +337,7 @@ mtg_deck_tester/
 ├── tournament.py   Swiss pods of four
 ├── spellbook.py    Commander Spellbook combo lookup
 ├── goldfish.py     solo Monte Carlo simulation (speed, consistency, combo turns)
-├── combos.py       combo section: your combos, the field, Forge cross-check
+├── combos.py       combo section: your combos, field interaction, Forge cross-check
 ├── analysis.py     weak points, suggestions, optional Claude notes
 ├── report_pdf.py   PDF report (ReportLab)
 ├── report_md.py    Markdown report

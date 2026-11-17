@@ -353,7 +353,7 @@ async function showReport(id){
     if (CD.over_bracket && CD.over_bracket.length) h += `<p class="msg err">Above bracket ${rep.bracket}: ${CD.over_bracket.map(c=>esc(c.pieces.join(" + "))+" ("+esc(c.bracket_label)+")").join("; ")}</p>`;
     if (CD.almost && CD.almost.length) h += `<p><b>One card away:</b> ${CD.almost.slice(0,6).map(a=>`add <b>${esc(a.missing)}</b> → ${esc(a.pieces.join(" + "))}`).join("; ")}</p>`;
     const F = CD.field || {};
-    if (F.opponents) h += `<p class="hint">Field: ${F.opponents_with_win_combos} of ${F.opponents} opponents have a game-winning combo. Chance one of 3 opponents has drawn a counterspell by turn 6: ${F.pod_counter_by_t6}%. You run ${CD.interaction.counters} counterspells and ${CD.interaction.instant_removal} instant-speed removal spells.</p>`;
+    if (F.opponents) h += `<p class="hint">Field: ${F.avg_counters} counterspells per opponent deck. Chance one of 3 opponents has drawn a counterspell by turn 6: ${F.pod_counter_by_t6}%. You run ${CD.interaction.counters} counterspells and ${CD.interaction.instant_removal} instant-speed removal spells.</p>`;
   }
   if (rep.ai_text) h += `<h3>Coaching notes from Claude</h3><div class="md">${md(rep.ai_text)}</div>`;
   if (rep.ai_error) h += `<p class="msg err">AI notes unavailable: ${esc(rep.ai_error)}</p>`;

@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.3.0] - 2026-11-17
+
+### Changed
+- Combos are only looked up for your own deck; the field section now shows the opponents'
+  counterspells and instant-speed removal. Runs start noticeably faster.
+- Opponents are picked at random from a few hundred popular decks (more popular = more likely)
+  instead of always the top of the list, so repeated runs face different decks.
+- Decks you faced in your last 3 runs are rarely picked again.
+
 ## [2.2.0] - 2026-11-17
 
 ### Added

@@ -5,6 +5,7 @@ side (format, bracket, colour identity, deck size) instead of trusting filters.
 """
 import json
 import os
+import random
 import re
 import urllib.parse
 
@@ -44,7 +45,7 @@ class Archidekt:
 
     def _search(self, params, pages):
         out = []
-        for page in range(1, pages + 1):
+        for page in pages:
             url = API + "v3/?" + urllib.parse.urlencode(dict(params, page=page))
             try:
                 data = get_json(url, host_gap=1.0)
@@ -58,14 +59,16 @@ class Archidekt:
                 break
         return out
 
-    def search(self, commanders, bracket, pages=4):
-        """Most-viewed Commander decks (optionally with the same commander), as Candidates."""
+    def search(self, commanders, bracket, pages=4, deepest_page=12):
+        """Popular Commander decks as Candidates: the most-viewed page plus random pages further down
+        the most-viewed list (up to ~600 decks deep), so each run sees a different selection."""
+        page_list = [1] + sorted(random.sample(range(2, deepest_page + 1), pages - 1))
         base = {"deckFormat": COMMANDER_FORMAT, "orderBy": "-viewCount", "pageSize": 50}
         if bracket:
             base["edhBracket"] = bracket
         found, seen = [], set()
-        queries = [(True, dict(base, commanderName=c), 1) for c in commanders]
-        queries.append((False, base, pages))
+        queries = [(True, dict(base, commanderName=c), [1, 2]) for c in commanders]
+        queries.append((False, base, page_list))
         for from_cmd, params, n_pages in queries:
             self.log("Searching Archidekt " + ("for your commander" if from_cmd else "for popular decks") + "...")
             for r in self._search(params, n_pages):

@@ -1,8 +1,8 @@
 """Combo and consistency analysis for the report.
 
-* finds every combo in your deck and the opponents' decks (Commander Spellbook)
+* finds every combo in your deck (Commander Spellbook; opponents are not looked up)
 * goldfishes your deck thousands of times to measure speed and consistency (goldfish.py)
-* checks how much interaction the field has against combos
+* counts the counterspells and instant-speed removal in the field
 * cross-checks the Forge games: did Forge's AI have all combo pieces and still not win?
 """
 from .analysis import classify
@@ -37,9 +37,9 @@ def _combo_view(c, stats=None):
             "speed": stats}
 
 
-def analyze(user_deck, opponents, card_db, bracket, spellbook, log=print, n_user=6000, n_opp=1500):
+def analyze(user_deck, opponents, card_db, bracket, spellbook, log=print, n_user=6000):
     out = {"available": True, "error": "", "included": [], "almost": [], "over_bracket": [],
-           "goldfish": None, "opponents": [], "interaction": {}, "field": {}}
+           "goldfish": None, "interaction": {}, "field": {}}
     sb_ok = spellbook is not None
 
     def find(deck):
@@ -94,39 +94,18 @@ def analyze(user_deck, opponents, card_db, bracket, spellbook, log=print, n_user
     uc, ur = _interaction(user_deck, card_db)
     out["interaction"] = {"counters": uc, "instant_removal": ur}
 
-    # ---- opponents
-    p_counter = []
-    for i, od in enumerate(opponents, 1):
-        log(f"Checking combos of opponent {i}/{len(opponents)}: {od.name}")
-        res = find(od)
-        od_names = {norm(n) for n in od.all_names()}
-        wins = [c for c in sorted([c for c in res["included"] if c["wins"]], key=_rank)
-                if {norm(p["name"]) for p in c["pieces"]} <= od_names][:6]
+    # ---- the field: counterspells and instant-speed removal (from card data, no combo lookups)
+    p_counter, opp_inter = [], []
+    for od in opponents:
         oc, orr = _interaction(od, card_db)
+        opp_inter.append((oc, orr))
         p_counter.append(chance_holding(oc))
-        entry = {"name": od.name, "combos": len(res["included"]), "win_combos": len([c for c in res["included"] if c["wins"]]),
-                 "counters": oc, "instant_removal": orr, "fastest": None}
-        if wins:
-            og = Goldfish(od, card_db, wins).run(n_opp, seed=7 + i)
-            best_k = None
-            for kk, st in enumerate(og["combo_each"]):
-                if best_k is None or st["t8"] > og["combo_each"][best_k]["t8"]:
-                    best_k = kk
-            if best_k is not None:
-                st = og["combo_each"][best_k]
-                entry["fastest"] = {"pieces": [p["name"] for p in wins[best_k]["pieces"]], "by_t6": st["t6"],
-                                    "by_t8": st["t8"], "median": st["median"], "url": wins[best_k]["url"]}
-            entry["any_by_t8"] = og["combo_any"]["t8"] if og["combo_any"] else 0
-        out["opponents"].append(entry)
-
     n = max(1, len(opponents))
     avg_p = sum(p_counter) / n if p_counter else 0
-    combo_opps = [o for o in out["opponents"] if o["win_combos"]]
     out["field"] = {
-        "opponents_with_win_combos": len(combo_opps),
         "opponents": len(opponents),
-        "avg_counters": round(sum(o["counters"] for o in out["opponents"]) / n, 1),
-        "avg_instant_removal": round(sum(o["instant_removal"] for o in out["opponents"]) / n, 1),
+        "avg_counters": round(sum(c for c, _ in opp_inter) / n, 1),
+        "avg_instant_removal": round(sum(r for _, r in opp_inter) / n, 1),
         # chance that at least one of three random opponents has drawn a counterspell by turn 6
         "pod_counter_by_t6": round(100 * (1 - (1 - avg_p) ** 3), 1),
     }
@@ -175,14 +154,9 @@ def weak_points(cd, bracket):
                      f"Forge's AI cast every piece of a winning combo in {fx['assembled']} game(s) but won only "
                      f"{fx['won']}. Forge plays combos poorly, so your real win rate is probably higher."))
     field = cd.get("field") or {}
-    inter = cd.get("interaction") or {}
-    fast_opps = [o for o in cd.get("opponents", []) if o.get("fastest") and (o["fastest"]["by_t8"] or 0) >= 30]
-    if fast_opps and inter.get("counters", 0) + inter.get("instant_removal", 0) < 5:
-        weak.append(("Little interaction against combos",
-                     f"{len(fast_opps)} opponent deck(s) assemble a winning combo by turn 8 in 30%+ of games, "
-                     f"but you run only {inter.get('counters', 0)} counterspells and "
-                     f"{inter.get('instant_removal', 0)} instant-speed removal spells."))
-        sugg.append("Add 2–3 instant-speed answers (counterspells, instant removal, graveyard hate) to stop combos.")
+    if cd.get("n_wins") and field.get("pod_counter_by_t6", 0) >= 50:
+        sugg.append(f"In a typical pod there's a {field['pod_counter_by_t6']}% chance an opponent holds a counterspell by "
+                    "turn 6: protect your combo (your own counters, 'can't be countered' effects) or bait answers first.")
     if cd.get("over_bracket"):
         weak.append(("Combo above your bracket",
                      f"{len(cd['over_bracket'])} combo(s) in your deck are rated above bracket {bracket} by Commander "

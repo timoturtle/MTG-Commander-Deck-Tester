@@ -339,7 +339,7 @@ AI_SYSTEM = ("You are an expert Magic: The Gathering Commander deckbuilder and c
              "so weigh structural problems over single-game noise. Respect the deck's colour identity and the "
              "target Commander bracket (Game Changer limits: bracket 1-2 none, bracket 3 up to three). "
              "If combo data is included, judge combo decks by the goldfish speed and combo data rather than "
-             "by Forge results alone, and suggest how to protect or speed up the combos, or how to answer the field's. "
+             "by Forge results alone, and suggest how to protect or speed up the combos, or how to get them past the field's interaction. "
              "Answer in Markdown with these sections: 'Summary' (2-3 sentences), 'Weak points' (most important "
              "first, each tied to evidence), 'Swaps' (a table of 6-10 concrete cut -> add pairs with a short reason; "
              "only cut cards that are in the deck; only add real cards legal in the colour identity), and "
@@ -376,7 +376,6 @@ def ai_analysis(api_key, model, deck, profile, analysis, results, bracket, combo
             "goldfish": combo_data.get("goldfish"),
             "forge_check": combo_data.get("forge_check"),
             "field": combo_data.get("field"),
-            "opponent_combos": [o for o in combo_data.get("opponents", []) if o.get("win_combos")],
             "your_interaction": combo_data.get("interaction"),
         }
     res = post_json("https://api.anthropic.com/v1/messages", {

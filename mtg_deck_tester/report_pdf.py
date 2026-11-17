@@ -252,24 +252,13 @@ def _combo_section(CD, rep, S, W):
 
     F, I = CD.get("field") or {}, CD.get("interaction") or {}
     if F.get("opponents"):
-        out.append(Paragraph("Combos and interaction in the field", S["h3"]))
+        out.append(Paragraph("Interaction in the field", S["h3"]))
         out.append(_facts([
-            ("Opponents with a game-winning combo", f"{F['opponents_with_win_combos']} of {F['opponents']}"),
             ("Counterspells per opponent deck (average)", f"{F['avg_counters']}"),
+            ("Instant-speed removal per opponent deck (average)", f"{F['avg_instant_removal']}"),
             ("Chance one of 3 opponents has drawn a counterspell by turn 6", f"{F['pod_counter_by_t6']}%"),
             ("Your counterspells / instant-speed removal", f"{I.get('counters', 0)} / {I.get('instant_removal', 0)}"),
         ], S, W))
-        threats = [o for o in CD.get("opponents", []) if o.get("fastest")]
-        threats.sort(key=lambda o: -(o["fastest"]["by_t8"] or 0))
-        if threats:
-            out.append(Spacer(1, 5))
-            trs = [[Paragraph(h, S["th"]) for h in ("Opponent", "Fastest winning combo", "By T8", "Typical")]]
-            for o in threats[:8]:
-                fz = o["fastest"]
-                trs.append([Paragraph(t(o["name"]), S["cell"]),
-                            Paragraph(f'<link href="{escape(fz["url"])}" color="#2F6FDE">{t(" + ".join(fz["pieces"]))}</link>', S["cell"]),
-                            Paragraph(f"{fz['by_t8']}%", S["cellr"]), Paragraph(t(_median(fz["median"])), S["cellr"])])
-            out.append(_table(trs, [W * 0.28, W * 0.44, W * 0.1, W * 0.18]))
     out.append(Paragraph("Combo data from Commander Spellbook (commanderspellbook.com).", S["small"]))
     return out
 
