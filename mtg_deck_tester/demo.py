@@ -97,3 +97,23 @@ def fake_game(deck_ids, decks_by_id, strength):
     else:
         out += "\nStopping slow match as draw\n\nGame Result: Game 1 ended in a Draw! Took 600000 ms.\n"
     return out
+
+
+class DemoSpellbook:
+    """Pretend combo database for demo mode: invents combos out of each deck's own cards."""
+
+    def find(self, deck):
+        rnd = random.Random(deck.name)
+        names = [n for _, n in deck.cards if n not in ("Forest", "Mountain", "Island", "Swamp", "Plains")]
+        if len(names) < 3 or rnd.random() < 0.4:
+            return {"included": [], "almost": []}
+
+        def combo(pieces, wins=True):
+            return {"id": "0", "url": "https://commanderspellbook.com/", "pieces": [{"name": p, "zones": ["B"]} for p in pieces],
+                    "commander_pieces": [], "templates": [], "produces": ["Infinite damage"] if wins else ["Infinite tokens"],
+                    "wins": wins, "mana_value_needed": 0, "mana_needed": "", "prerequisites": "",
+                    "bracket_tag": "P", "bracket_label": "Powerful", "bracket": 3, "popularity": rnd.randint(10, 5000),
+                    "identity": ""}
+        a, b, c = rnd.sample(names, 3)
+        return {"included": [combo([a, b]), combo([b, c], wins=False)],
+                "almost": [combo([a, "Demo Missing Piece"])]}

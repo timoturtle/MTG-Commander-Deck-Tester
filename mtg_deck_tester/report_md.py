@@ -37,6 +37,36 @@ def to_markdown(rep):
     if a["add_candidates"]:
         out += ["", "**Popular in similar decks, not in yours:** " +
                 ", ".join(f"{c['card']} ({c['in_decks']})" for c in a["add_candidates"])]
+    CD = rep.get("combos")
+    if CD and CD.get("goldfish"):
+        gf = CD["goldfish"]
+        med = lambda m: f"turn {m}" if m else "after turn 10"
+        out += ["", "## Combos and consistency", "",
+                f"_Goldfish estimate: {gf['games']:,} solo games playing towards the combos; no opponents._", "",
+                f"- Keepable 7-card hand: {gf['keep7']}%",
+                f"- Non-land play on turn 1 / 2: {gf['t1_play']}% / {gf['t2_play']}%",
+                f"- Commander on curve: {gf['cmd_on_curve']}%",
+                f"- Mana screw: {gf['screw']}% · flood: {gf['flood']}%"]
+        if gf.get("combo_any"):
+            ca = gf["combo_any"]
+            out.append(f"- Any combo by turn 4 / 6 / 8: {ca['t4']}% / {ca['t6']}% / {ca['t8']}% (typical: {med(ca['median'])})")
+        if not CD.get("available"):
+            out.append(f"- {CD.get('error')}")
+        if CD.get("included"):
+            out += ["", "| Combo | Result | Bracket | By T8 | Typical |", "|---|---|---|---|---|"]
+            for c in CD["included"][:10]:
+                sp = c.get("speed") or {}
+                out.append(f"| [{_c(' + '.join(c['pieces']))}]({c['url']}) | {_c(', '.join(c['produces'][:2]))} | "
+                           f"{c.get('bracket_label') or '–'} | {str(sp['t8']) + '%' if sp else '–'} | "
+                           f"{med(sp.get('median')) if sp else '–'} |")
+        if CD.get("almost"):
+            out += ["", "**One card away:** " + "; ".join(f"add {a['missing']} → {' + '.join(a['pieces'])}"
+                                                           for a in CD["almost"][:6])]
+        F = CD.get("field") or {}
+        if F.get("opponents"):
+            out += ["", f"**Field:** {F['opponents_with_win_combos']} of {F['opponents']} opponents have a game-winning "
+                        f"combo; chance one of 3 opponents holds a counterspell by turn 6: {F['pod_counter_by_t6']}%."]
+
     if rep.get("ai_text"):
         out += ["", "## AI coach", "", rep["ai_text"]]
     out += ["", "## Standings", "", "| # | Deck | Points | Pod finishes |", "|---|---|---|---|"]

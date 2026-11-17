@@ -332,6 +332,29 @@ async function showReport(id){
   h += `<h3>How to improve</h3><ul>${A.suggestions.map(s=>`<li>${esc(s)}</li>`).join("") || "<li>Run more rounds for a clearer picture.</li>"}</ul>`;
   if (A.cut_candidates.length) h += `<p><b>Cards to reconsider</b> (never cast during testing): ${A.cut_candidates.map(c=>esc(c.card)).join(", ")}</p>`;
   if (A.add_candidates.length) h += `<p><b>Popular in similar decks, not in yours:</b> ${A.add_candidates.map(c=>`${esc(c.card)}${c.fits_need?" ★":""}`).join(", ")}</p><p class="hint">★ fits one of your weak points.</p>`;
+  const CD = rep.combos;
+  if (CD && CD.goldfish) {
+    const gf = CD.goldfish, med = m => m ? `turn ${m}` : "after turn 10";
+    h += `<h3>Combos and consistency</h3><p class="hint">Goldfish estimate from ${gf.games.toLocaleString()} solo games that play towards your combos on purpose. No opponents, so it’s best-case speed — but it shows what Forge’s AI misses.</p>
+      <div class="scroll"><table>
+      <tr><td>Keepable 7-card hand</td><td class="num">${gf.keep7}%</td></tr>
+      <tr><td>Non-land play on turn 1 / 2</td><td class="num">${gf.t1_play}% / ${gf.t2_play}%</td></tr>
+      <tr><td>Commander on curve</td><td class="num">${gf.cmd_on_curve}%</td></tr>
+      <tr><td>Mana screw / flood</td><td class="num">${gf.screw}% / ${gf.flood}%</td></tr>
+      ${gf.combo_any ? `<tr><td>Any combo by turn 4 / 6 / 8</td><td class="num">${gf.combo_any.t4}% / ${gf.combo_any.t6}% / ${gf.combo_any.t8}%</td></tr>
+      <tr><td>Typical combo turn</td><td class="num">${med(gf.combo_any.median)}</td></tr>` : ""}
+      </table></div>`;
+    if (!CD.available) h += `<p class="msg err">${esc(CD.error)}</p>`;
+    if (CD.included && CD.included.length) {
+      h += `<div class="scroll"><table><tr><th>Your combo</th><th>Result</th><th>Bracket</th><th class="num">By T8</th><th class="num">Typical</th></tr>` +
+        CD.included.slice(0,10).map(c => `<tr><td><a href="${esc(c.url)}" target="_blank" rel="noopener">${esc(c.pieces.join(" + "))}</a></td><td>${esc(c.produces.slice(0,2).join(", "))}</td><td>${esc(c.bracket_label||"–")}</td><td class="num">${c.speed?c.speed.t8+"%":"–"}</td><td class="num">${c.speed?med(c.speed.median):"–"}</td></tr>`).join("") + `</table></div>`;
+      if (CD.forge_check) h += `<p class="hint">In the Forge games your deck cast every piece of a winning combo in ${CD.forge_check.assembled} of ${CD.forge_check.games} games and won ${CD.forge_check.won} of those.</p>`;
+    }
+    if (CD.over_bracket && CD.over_bracket.length) h += `<p class="msg err">Above bracket ${rep.bracket}: ${CD.over_bracket.map(c=>esc(c.pieces.join(" + "))+" ("+esc(c.bracket_label)+")").join("; ")}</p>`;
+    if (CD.almost && CD.almost.length) h += `<p><b>One card away:</b> ${CD.almost.slice(0,6).map(a=>`add <b>${esc(a.missing)}</b> → ${esc(a.pieces.join(" + "))}`).join("; ")}</p>`;
+    const F = CD.field || {};
+    if (F.opponents) h += `<p class="hint">Field: ${F.opponents_with_win_combos} of ${F.opponents} opponents have a game-winning combo. Chance one of 3 opponents has drawn a counterspell by turn 6: ${F.pod_counter_by_t6}%. You run ${CD.interaction.counters} counterspells and ${CD.interaction.instant_removal} instant-speed removal spells.</p>`;
+  }
   if (rep.ai_text) h += `<h3>Coaching notes from Claude</h3><div class="md">${md(rep.ai_text)}</div>`;
   if (rep.ai_error) h += `<p class="msg err">AI notes unavailable: ${esc(rep.ai_error)}</p>`;
 

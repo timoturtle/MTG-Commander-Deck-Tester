@@ -13,7 +13,8 @@ import urllib.parse
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import APP_NAME, __version__, analysis, archidekt, demo, forge, moxfield, opponents, report_md, tournament
+from . import (APP_NAME, __version__, analysis, archidekt, combos, demo, forge, moxfield, opponents, report_md,
+               spellbook, tournament)
 from .decklist import parse_decklist
 from .scryfall import CardDB
 
@@ -170,6 +171,20 @@ def run_job(req):
             idents = sorted(opponents.identity_str(opponents._identity(o, CARD_DB)) for o in opps)
             job.say("Colour identities in the field: " + ", ".join(idents))
 
+        # combos + goldfish (before the games, so you see results early in the log)
+        sb = demo.DemoSpellbook() if DEMO else spellbook.Spellbook(CACHE, log=job.say)
+        try:
+            combo_data = combos.analyze(deck, opps, CARD_DB, bracket, sb, log=job.say)
+            gf = combo_data["goldfish"]
+            job.say(f"Goldfish: keepable 7-card hand {gf['keep7']}%, commander on curve {gf['cmd_on_curve']}%"
+                    + (f", combo by turn 8 in {gf['combo_any']['t8']}% of games" if gf.get("combo_any") else ""))
+        except Exception as e:
+            traceback.print_exc()
+            combo_data = None
+            job.say(f"Combo analysis skipped: {e}")
+        if job.cancel.is_set():
+            raise tournament.Cancelled()
+
         stamp = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
         slug = re.sub(r"[^A-Za-z0-9]+", "-", deck.commanders[0])[:30].strip("-")
         rid = f"{stamp}_{slug}"
@@ -199,9 +214,14 @@ def run_job(req):
 
         job.say("Analysing results...")
         ana = analysis.weak_points_and_suggestions(res, deck, prof, CARD_DB, opps, bracket)
+        if combo_data:
+            combo_data["forge_check"] = combos.forge_crosscheck(combo_data, res, deck, CARD_DB)
+            cw, cs = combos.weak_points(combo_data, bracket)
+            ana["weak_points"] += [{"title": t, "detail": d} for t, d in cw]
+            ana["suggestions"] += [x for x in cs if x not in ana["suggestions"]]
         rep = {"id": rid, "created": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
                "app_version": __version__, "deck": deck.to_dict(), "profile": prof, "bracket": bracket,
-               "results": res, "analysis": ana, "ai_text": "", "ai_error": "", "demo": DEMO}
+               "results": res, "analysis": ana, "combos": combo_data, "ai_text": "", "ai_error": "", "demo": DEMO}
         if req.get("use_ai"):
             if not s.get("api_key"):
                 rep["ai_error"] = "No Claude API key saved in Settings."
@@ -209,7 +229,7 @@ def run_job(req):
                 job.say("Asking Claude for coaching notes...")
                 try:
                     rep["ai_text"] = analysis.ai_analysis(s["api_key"], s.get("model") or DEFAULT_SETTINGS["model"],
-                                                          deck, prof, ana, res, bracket)
+                                                          deck, prof, ana, res, bracket, combo_data)
                 except Exception as e:
                     rep["ai_error"] = str(e)[:400]
                     job.say("AI analysis failed: " + rep["ai_error"])

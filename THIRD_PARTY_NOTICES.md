@@ -32,6 +32,7 @@ of the two is distributed. Forge's license applies to Forge itself.
 | Service | Used for | Notes |
 |---|---|---|
 | [Scryfall API](https://scryfall.com/docs/api) | Card names, colour identity, card types | Used per Scryfall's API guidelines (identifying User-Agent, rate limits, local caching). Card data is © Wizards of the Coast. |
+| [Commander Spellbook](https://commanderspellbook.com) | Finding combos in decklists | Public API of its open-source backend ([commander-spellbook-backend](https://github.com/SpaceCowMedia/commander-spellbook-backend)), used at a low request rate with local caching. Combo data belongs to Commander Spellbook and its contributors. |
 | [Archidekt](https://archidekt.com) | Finding popular public decks | Public but undocumented API, used at a low request rate. Deck lists belong to their authors. |
 | [Moxfield](https://moxfield.com) | Finding popular public decks (optional) | Off by default. Moxfield's terms don't allow automated access without permission; the feature only runs with a User-Agent that Moxfield issued to you (ask support@moxfield.com). |
 | [Claude API](https://www.anthropic.com/api) by Anthropic | Optional coaching notes | Only with your own API key; usage is billed to your account and subject to Anthropic's terms. |
@@ -51,4 +52,4 @@ MTG Commander Deck Tester is unofficial Fan Content permitted under the
 Wizards. Portions of the materials used are property of Wizards of the Coast. ©Wizards of the Coast LLC.
 
 Magic: The Gathering and all card names are trademarks of Wizards of the Coast LLC.
-This project is not affiliated with Forge, Archidekt, Moxfield, Scryfall or Anthropic.
+This project is not affiliated with Forge, Commander Spellbook, Archidekt, Moxfield, Scryfall or Anthropic.

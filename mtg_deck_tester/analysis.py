@@ -338,13 +338,15 @@ AI_SYSTEM = ("You are an expert Magic: The Gathering Commander deckbuilder and c
              "and results from AI-vs-AI test games run in Forge (pods of four). Forge's AI plays imperfectly, "
              "so weigh structural problems over single-game noise. Respect the deck's colour identity and the "
              "target Commander bracket (Game Changer limits: bracket 1-2 none, bracket 3 up to three). "
+             "If combo data is included, judge combo decks by the goldfish speed and combo data rather than "
+             "by Forge results alone, and suggest how to protect or speed up the combos, or how to answer the field's. "
              "Answer in Markdown with these sections: 'Summary' (2-3 sentences), 'Weak points' (most important "
              "first, each tied to evidence), 'Swaps' (a table of 6-10 concrete cut -> add pairs with a short reason; "
              "only cut cards that are in the deck; only add real cards legal in the colour identity), and "
              "'How to pilot it' (2-4 tips). Be concise and specific.")
 
 
-def ai_analysis(api_key, model, deck, profile, analysis, results, bracket):
+def ai_analysis(api_key, model, deck, profile, analysis, results, bracket, combo_data=None):
     me = next(s for s in results["standings"] if s["id"] == USER)
     payload = {
         "commander": deck.commanders, "bracket": bracket, "colour_identity": profile["identity"],
@@ -364,6 +366,19 @@ def ai_analysis(api_key, model, deck, profile, analysis, results, bracket):
                                           for r in analysis["early_game"]["games"]],
         "popular_in_similar_decks_not_in_yours": [a["card"] for a in analysis["add_candidates"]],
     }
+    if combo_data:
+        payload["combos"] = {
+            "note": "Forge's AI plays combos poorly; the goldfish numbers are solo simulations of deliberate play.",
+            "your_combos": [{k: c[k] for k in ("pieces", "produces", "wins", "bracket_label", "speed")}
+                            for c in combo_data.get("included", [])[:10]],
+            "one_card_away": [{"add": a["missing"], "pieces": a["pieces"], "produces": a["produces"]}
+                              for a in combo_data.get("almost", [])[:6]],
+            "goldfish": combo_data.get("goldfish"),
+            "forge_check": combo_data.get("forge_check"),
+            "field": combo_data.get("field"),
+            "opponent_combos": [o for o in combo_data.get("opponents", []) if o.get("win_combos")],
+            "your_interaction": combo_data.get("interaction"),
+        }
     res = post_json("https://api.anthropic.com/v1/messages", {
         "model": model, "max_tokens": 2500, "system": AI_SYSTEM,
         "messages": [{"role": "user", "content": "Analyse this test run:\n```json\n" + json.dumps(payload, indent=1) + "\n```"}],

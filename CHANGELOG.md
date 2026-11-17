@@ -4,6 +4,21 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.2.0] - 2026-11-17
+
+### Added
+- "Combos and consistency" report section, so combo decks are judged fairly:
+  - combos in your deck from Commander Spellbook, with links
+  - goldfish simulation (6,000 solo games) of how fast each combo is assembled when played deliberately
+  - consistency: keepable hands, turn 1–2 plays, commander on curve, screw and flood
+  - Forge cross-check: combos Forge's AI had but didn't win with
+  - combos one card away, combos above your bracket
+  - the field's combos and counterspells
+- New weak points: "Combo rarely comes together", "Forge didn't finish the combo",
+  "Little interaction against combos", "Combo above your bracket", "Inconsistent opening hands",
+  "Mana screw risk", "Flood risk".
+- Claude coaching notes now receive the combo data.
+
 ## [2.1.0] - 2026-11-17
 
 ### Added

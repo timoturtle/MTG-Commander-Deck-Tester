@@ -21,6 +21,7 @@ final standing, your place in every pod, your deck's weak points and concrete su
 - [Installation on Windows](#installation-on-windows)
 - [Using the app](#using-the-app)
 - [How opponents are chosen](#how-opponents-are-chosen)
+- [Combos and consistency](#combos-and-consistency)
 - [Opening hands and early plays](#opening-hands-and-early-plays)
 - [How the tournament works](#how-the-tournament-works)
 - [Optional extras](#optional-extras)
@@ -37,6 +38,9 @@ final standing, your place in every pod, your deck's weak points and concrete su
   land drops by turn 4, when your commander comes down, damage dealt and taken, mulligans,
   spells per turn and how you lost (combat, commander damage, combos...)
 - **Deck makeup check**: lands, ramp, card draw, removal, board wipes and curve
+- **Combos and consistency**: every combo in your deck (from Commander Spellbook), how fast your
+  deck assembles them when it plays towards them on purpose, combos you're one card away from,
+  combos above your bracket, and the combos and counterspells in the field
 - **Opening hands and early plays**: the hand your deck kept in every game, and whether it
   cast something other than a land on its turn 1 and turn 2
 - **Suggestions**: cards you never cast during testing, and cards that are popular in the
@@ -227,6 +231,27 @@ three times faster but gives no overall standing.
 4. **Variety:** at most one deck with your own commander (two in a 16-deck field), no duplicate
    commanders, no copies of your own deck, and only legal 100-card decks.
 
+## Combos and consistency
+
+Forge's AI decides card by card and doesn't plan combos, so combo decks test worse in Forge than
+they play. The report therefore adds a section that doesn't rely on Forge's AI:
+
+- **Your combos:** your decklist is checked against [Commander Spellbook](https://commanderspellbook.com),
+  the community combo database. Each combo links to its Commander Spellbook page.
+- **Goldfish speed:** the app plays your deck alone 6,000 times, deliberately: ramp first, tutors
+  fetch missing combo pieces, combo cards are held until they can be used. It reports how often
+  each combo is assembled by turn 4, 6 and 8, and the typical turn.
+- **Consistency:** keepable 7-card hands, non-land plays on turns 1 and 2, commander on curve,
+  mana screw and flood, mana on turns 4 and 6.
+- **Forge check:** how often Forge's AI cast every piece of a winning combo and still didn't win.
+- **One card away:** combos you'd complete by adding one card, only in your colours and bracket.
+- **Above your bracket:** combos Commander Spellbook rates higher than the bracket you chose.
+- **The field:** which opponents have winning combos and how fast, how many counterspells they run,
+  and the chance one of three opponents holds a counterspell by turn 6.
+
+The goldfish is an estimate: there are no opponents, and card effects are simplified to ramp, card
+draw, tutors and the combo pieces. Use it to compare versions of your deck rather than as a promise.
+
 ## Opening hands and early plays
 
 The report ends with a summary for your deck: the opening hand it kept in every game (after
@@ -290,6 +315,8 @@ Never share `settings.json`: it contains your API keys.
   links into "Specific opponents".
 - The app was built and tested against Forge 2.0.16. Newer Forge versions usually work; if the
   opening-hand helper stops compiling, the app falls back to Forge's normal mode automatically.
+- The combo section depends on Commander Spellbook being reachable; without it the consistency
+  numbers are still shown.
 - Weak points like "light on ramp" come from simple card-text rules and can miss unusual cards.
 
 ## For developers
@@ -305,6 +332,9 @@ mtg_deck_tester/
 ├── forge.py        runs Forge's simulation mode and parses its game logs
 ├── java/HandSim.java  helper that also records opening hands (compiled locally)
 ├── tournament.py   Swiss pods of four
+├── spellbook.py    Commander Spellbook combo lookup
+├── goldfish.py     solo Monte Carlo simulation (speed, consistency, combo turns)
+├── combos.py       combo section: your combos, the field, Forge cross-check
 ├── analysis.py     weak points, suggestions, optional Claude notes
 ├── report_pdf.py   PDF report (ReportLab)
 ├── report_md.py    Markdown report
@@ -337,7 +367,7 @@ services and their licenses are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_N
 Forge (GPL-3.0) and Java are installed separately and not included; ReportLab (BSD) and certifi
 (MPL-2.0) are installed from PyPI.
 
-Thanks to the [Forge](https://github.com/Card-Forge/forge) developers, [Scryfall](https://scryfall.com),
+Thanks to the [Forge](https://github.com/Card-Forge/forge) developers, [Commander Spellbook](https://commanderspellbook.com), [Scryfall](https://scryfall.com),
 [Archidekt](https://archidekt.com) and [Moxfield](https://moxfield.com).
 
 MTG Commander Deck Tester is unofficial Fan Content permitted under the

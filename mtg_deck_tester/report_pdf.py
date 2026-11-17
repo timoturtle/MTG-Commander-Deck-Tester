@@ -183,6 +183,97 @@ METRICS = [("place", "Average pod finish", False), ("lands_t4", "Lands by your t
            ("survived", "Games survived to the end", True)]
 
 
+def _facts(rows, S, W):
+    ft = Table([[Paragraph(t(a), S["cell"]), Paragraph(f"<b>{t(b)}</b>", S["cellr"])] for a, b in rows],
+               colWidths=[W * 0.62, W * 0.38])
+    ft.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), PANEL), ("LINEBELOW", (0, 0), (-1, -2), 0.5, LINE),
+                            ("LEFTPADDING", (0, 0), (-1, -1), 8), ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                            ("TOPPADDING", (0, 0), (-1, -1), 3.5), ("BOTTOMPADDING", (0, 0), (-1, -1), 3.5)]))
+    return ft
+
+
+def _median(m):
+    return f"turn {m}" if m else "after turn 10"
+
+
+def _combo_section(CD, rep, S, W):
+    gf = CD["goldfish"]
+    out = [Paragraph("Combos and consistency", S["h2"]),
+           Paragraph(t(f"Forge’s AI plays combos poorly, so this section measures your deck by goldfishing: "
+                       f"{gf['games']:,} solo games in which the deck plays towards its combos on purpose "
+                       "(ramp first, tutors fetch missing pieces). No opponents or interaction, so treat the "
+                       "numbers as best-case speed."), S["small"]), Spacer(1, 5)]
+    rows = [("Keepable 7-card opening hand", f"{gf['keep7']}%"),
+            ("Non-land play on turn 1 / turn 2", f"{gf['t1_play']}% / {gf['t2_play']}%"),
+            ("Commander cast on curve", f"{gf['cmd_on_curve']}%"),
+            ("Mana screw (missed land drop by turn 3)", f"{gf['screw']}%"),
+            ("Flood (8+ lands in first 13 cards)", f"{gf['flood']}%"),
+            ("Average mana on turn 4 / turn 6", f"{gf['avg_mana_t4']} / {gf['avg_mana_t6']}")]
+    if CD.get("available"):
+        rows.append(("Combos in your deck", f"{CD.get('n_included', 0)} ({CD.get('n_wins', 0)} game-winning)"))
+    if gf.get("combo_any"):
+        ca = gf["combo_any"]
+        rows.append(("Any combo assembled by turn 4 / 6 / 8", f"{ca['t4']}% / {ca['t6']}% / {ca['t8']}%"))
+        rows.append(("Typical combo turn (median)", _median(ca["median"])))
+    out.append(_facts(rows, S, W))
+    if not CD.get("available"):
+        out += [Spacer(1, 3), Paragraph(t(CD.get("error") or "Combo database unavailable."), S["small"])]
+
+    if CD.get("included"):
+        out.append(Paragraph("Your combos", S["h3"]))
+        trs = [[Paragraph(h, S["th"]) for h in ("Combo", "Result", "Bracket", "By T6", "By T8", "Typical")]]
+        for c in CD["included"][:10]:
+            sp = c.get("speed") or {}
+            trs.append([Paragraph(f'<link href="{escape(c["url"])}" color="#2F6FDE">{t(" + ".join(c["pieces"]))}</link>', S["cell"]),
+                        Paragraph(t(", ".join(c["produces"][:2])), S["cell"]),
+                        Paragraph(t(c.get("bracket_label") or "–"), S["cell"]),
+                        Paragraph(f"{sp['t6']}%" if sp else "–", S["cellr"]),
+                        Paragraph(f"{sp['t8']}%" if sp else "–", S["cellr"]),
+                        Paragraph(t(_median(sp.get("median")) if sp else "–"), S["cellr"])])
+        out.append(_table(trs, [W * 0.36, W * 0.22, W * 0.1, W * 0.09, W * 0.09, W * 0.14]))
+        fx = CD.get("forge_check")
+        if fx:
+            out += [Spacer(1, 3), Paragraph(t(
+                f"In the Forge games, your deck cast every piece of a winning combo in {fx['assembled']} of "
+                f"{fx['games']} games and won {fx['won']} of those."), S["small"])]
+    if CD.get("over_bracket"):
+        out.append(Paragraph("Combos above your bracket", S["h3"]))
+        out += [Paragraph(t(f"{' + '.join(c['pieces'])} – {c['bracket_label']} (bracket {c['bracket']})"),
+                          S["bullet"], bulletText="•") for c in CD["over_bracket"]]
+    if CD.get("almost"):
+        out.append(Paragraph("One card away from a combo", S["h3"]))
+        trs = [[Paragraph(h, S["th"]) for h in ("Add", "Completes", "Result")]]
+        for a in CD["almost"][:6]:
+            trs.append([Paragraph(f"<b>{t(a['missing'])}</b>", S["cell"]),
+                        Paragraph(f'<link href="{escape(a["url"])}" color="#2F6FDE">{t(" + ".join(a["pieces"]))}</link>', S["cell"]),
+                        Paragraph(t(", ".join(a["produces"][:2])), S["cell"])])
+        out.append(_table(trs, [W * 0.25, W * 0.5, W * 0.25]))
+        out.append(Paragraph(t(f"Only combos in your colours and allowed in bracket {rep['bracket']} are listed."), S["small"]))
+
+    F, I = CD.get("field") or {}, CD.get("interaction") or {}
+    if F.get("opponents"):
+        out.append(Paragraph("Combos and interaction in the field", S["h3"]))
+        out.append(_facts([
+            ("Opponents with a game-winning combo", f"{F['opponents_with_win_combos']} of {F['opponents']}"),
+            ("Counterspells per opponent deck (average)", f"{F['avg_counters']}"),
+            ("Chance one of 3 opponents has drawn a counterspell by turn 6", f"{F['pod_counter_by_t6']}%"),
+            ("Your counterspells / instant-speed removal", f"{I.get('counters', 0)} / {I.get('instant_removal', 0)}"),
+        ], S, W))
+        threats = [o for o in CD.get("opponents", []) if o.get("fastest")]
+        threats.sort(key=lambda o: -(o["fastest"]["by_t8"] or 0))
+        if threats:
+            out.append(Spacer(1, 5))
+            trs = [[Paragraph(h, S["th"]) for h in ("Opponent", "Fastest winning combo", "By T8", "Typical")]]
+            for o in threats[:8]:
+                fz = o["fastest"]
+                trs.append([Paragraph(t(o["name"]), S["cell"]),
+                            Paragraph(f'<link href="{escape(fz["url"])}" color="#2F6FDE">{t(" + ".join(fz["pieces"]))}</link>', S["cell"]),
+                            Paragraph(f"{fz['by_t8']}%", S["cellr"]), Paragraph(t(_median(fz["median"])), S["cellr"])])
+            out.append(_table(trs, [W * 0.28, W * 0.44, W * 0.1, W * 0.18]))
+    out.append(Paragraph("Combo data from Commander Spellbook (commanderspellbook.com).", S["small"]))
+    return out
+
+
 def build_pdf(rep, path):
     S = _styles()
     R, A = rep["results"], rep["analysis"]
@@ -289,6 +380,11 @@ def build_pdf(rep, path):
                            colWidths=[W / 2, W / 2],
                            style=[("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0)]))
 
+    # combos and consistency (goldfish + Commander Spellbook)
+    CD = rep.get("combos")
+    if CD and CD.get("goldfish"):
+        story += _combo_section(CD, rep, S, W)
+
     if rep.get("ai_text"):
         story.append(Paragraph("Coaching notes from Claude", S["h2"]))
         story += _md_flowables(rep["ai_text"], S, W)
@@ -393,7 +489,8 @@ def build_pdf(rep, path):
     story.append(Spacer(1, 10))
     story.append(Paragraph(
         "Forge’s AI is a decent but imperfect pilot: look for patterns across rounds rather than single games. "
-        "Unofficial fan-made tool, not affiliated with Wizards of the Coast, Forge, Archidekt, Moxfield or Scryfall.",
+        "Unofficial fan-made tool, not affiliated with Wizards of the Coast, Forge, Commander Spellbook, Archidekt, "
+        "Moxfield or Scryfall.",
         S["small"]))
 
     def footer(canv, d):
