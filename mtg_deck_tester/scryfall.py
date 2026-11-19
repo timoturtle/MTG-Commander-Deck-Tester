@@ -73,15 +73,65 @@ class CardDB:
         return bool(e) and e.get("v") == CACHE_VERSION and time.time() - e.get("fetched", 0) < PRICE_MAX_AGE
 
     def price(self, name):
-        """Price in EUR (Cardmarket trend via Scryfall). Falls back to USD converted roughly. None if unknown."""
+        """Price in EUR of the cheapest paper printing (Cardmarket trend via Scryfall) when it has been looked
+        up, otherwise of Scryfall's default printing. Falls back to USD converted roughly. None if unknown."""
         e = self.get(name)
         if not e:
             return None
-        if e.get("eur") is not None:
-            return e["eur"]
-        if e.get("usd") is not None:
-            return round(e["usd"] * USD_TO_EUR, 2)
+        fresh_min = time.time() - e.get("min_fetched", 0) < PRICE_MAX_AGE
+        for k in (("eur_min", "eur") if fresh_min else ("eur",)):
+            if e.get(k) is not None:
+                return e[k]
+        for k in (("usd_min", "usd") if fresh_min else ("usd",)):
+            if e.get(k) is not None:
+                return round(e[k] * USD_TO_EUR, 2)
         return None
+
+    def cheapest(self, names, min_price=0.5, log=None, label=""):
+        """Look up the cheapest paper printing of every card whose default printing costs at least min_price
+        (or has no price). One Scryfall search per card; results are cached for a week."""
+        todo = []
+        for n in dict.fromkeys(names):
+            e = self.get(n)
+            if not e or time.time() - e.get("min_fetched", 0) < PRICE_MAX_AGE:
+                continue
+            if e.get("type_line", "").startswith("Basic Land"):
+                continue
+            p = e.get("eur") if e.get("eur") is not None else e.get("usd")
+            if p is None or p >= min_price:
+                todo.append(n)
+        if todo and log:
+            log(f"Looking up the cheapest printing of {len(todo)} card(s){label}...")
+        changed = False
+        for i, n in enumerate(todo):
+            e = self.get(n)
+            q = f'!"{e["name"].split(" // ")[0]}" game:paper -set_type:memorabilia -is:oversized'
+            url = ("https://api.scryfall.com/cards/search?unique=prints&order=eur&dir=asc&q="
+                   + urllib.parse.quote(q))
+            try:
+                data = get_json(url, host_gap=0.11, retries=2)
+            except Exception:
+                if log:
+                    log("Scryfall can't be reached for prices right now; using standard printings.")
+                break  # don't wait on every remaining card
+            eurs, usds = [], []
+            for c in (data or {}).get("data", []):
+                pr = c.get("prices") or {}
+                for key, bucket in (("eur", eurs), ("usd", usds)):
+                    try:
+                        if pr.get(key) is not None:
+                            bucket.append(float(pr[key]))
+                    except (TypeError, ValueError):
+                        pass
+            with self.lock:
+                e["eur_min"] = min(eurs) if eurs else None
+                e["usd_min"] = min(usds) if usds else None
+                e["min_fetched"] = int(time.time())
+            changed = True
+            if log and i and i % 50 == 0:
+                log(f"  ...{i} of {len(todo)}")
+        if changed:
+            self.save()
 
     def resolve(self, names):
         """Look up all names (cached). Returns list of names not found."""

@@ -7,6 +7,8 @@
 //   * per-deck AI personality (Forge's AI profiles) and optional mulligan rules
 //   * stalled games end early (turn limit, no life change for many turns)
 //   * the time limit only counts time the computer is awake
+//   * cards returning to hand, cast from graveyard/exile or reanimated are written to the log
+//     (Forge itself only logs Battlefield -> Graveyard/Exile)
 //
 // Protocol (one line per command on stdin, fields separated by TAB):
 //   GAME  id  outFile  deckDir  clockSec  maxTurns  stallTurns  monteCarlo(0/1)  deck1 ... deckN
@@ -37,6 +39,7 @@ import forge.ai.PlayerControllerAi;
 import forge.game.Game;
 import forge.game.GameEndReason;
 import forge.game.GameLogEntry;
+import forge.game.GameLogEntryType;
 import forge.game.GameRules;
 import forge.game.GameType;
 import forge.game.Match;
@@ -126,9 +129,50 @@ public class HandSim {
             this.stallTurns = stallTurns;
         }
 
+        /** Read a record accessor by reflection, so other Forge versions still compile and run. */
+        private static Object call(Object o, String method) {
+            try {
+                return o == null ? null : o.getClass().getMethod(method).invoke(o);
+            } catch (Exception e) {
+                return null;
+            }
+        }
+
+        private void logMove(GameEvent ev) {
+            Object card = call(ev, "card");
+            Object from = call(call(ev, "from"), "zoneType");
+            Object to = call(call(ev, "to"), "zoneType");
+            if (card == null || from == null || to == null) {
+                return;
+            }
+            String f = from.toString(), t = to.toString();
+            boolean toHand = t.equals("Hand") && (f.equals("Graveyard") || f.equals("Battlefield") || f.equals("Exile")
+                    || f.equals("Stack"));
+            boolean castFromZone = t.equals("Stack") && (f.equals("Graveyard") || f.equals("Exile") || f.equals("Library"));
+            boolean reanimate = t.equals("Battlefield") && f.equals("Graveyard");
+            if (!(toHand || castFromZone || reanimate)) {
+                return;
+            }
+            Object owner = call(card, "getController");
+            if (owner == null) {
+                owner = call(card, "getOwner");
+            }
+            game.getGameLog().add(GameLogEntryType.ZONE_CHANGE,
+                    "[Moved] " + owner + ": " + card + " from " + f + " to " + t);
+        }
+
         @Subscribe
         public void onEvent(GameEvent ev) {
-            if (!ev.getClass().getSimpleName().equals("GameEventTurnBegan")) {
+            String kind = ev.getClass().getSimpleName();
+            if (kind.equals("GameEventCardChangeZone")) {
+                try {
+                    logMove(ev);
+                } catch (Throwable ignored) {
+                    // logging only
+                }
+                return;
+            }
+            if (!kind.equals("GameEventTurnBegan")) {
                 return;
             }
             if (!printed) {

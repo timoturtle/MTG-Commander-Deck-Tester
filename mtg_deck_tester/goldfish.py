@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 
 BASICS = {"plains", "island", "swamp", "mountain", "forest", "wastes"}
 TYPES = ("creature", "artifact", "enchantment", "instant", "sorcery", "planeswalker", "battle", "land")
-WORDNUM = {"a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "x": 2}
+WORDNUM = {"a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "x": 2}
 MAX_TURN = 10        # combos are measured up to here
 KILL_TURN = 15       # the solo win check runs this long
 OPP_LIFE = 40
@@ -44,8 +44,11 @@ class Card:
     haste: bool = False
     infect: bool = False
     toxic: int = 0
-    drain_once: int = 0      # life each opponent loses when cast
-    drain_turn: int = 0      # life each opponent loses per turn while on the battlefield
+    drain_once: int = 0      # non-combat damage / life loss for each opponent when cast
+    drain_turn: int = 0      # non-combat damage / life loss for each opponent per turn on the battlefield
+    punish_draw: int = 0     # damage to an opponent for each card they draw (Nekusar, Underworld Dreams...)
+    opp_draws: int = 0       # cards each opponent draws when this is cast (wheels, group draw)
+    opp_draw_turn: int = 0   # extra cards each opponent draws every turn while on the battlefield
     mill_once: int = 0
     mill_turn: int = 0
     alt_win: bool = False
@@ -116,6 +119,21 @@ def _win_traits(c, info, o):
             c.drain_turn = min(n, 3)
         else:
             c.drain_once = min(n, 10)
+    pm = re.search(r"whenever an opponent draws a card[^.]*?(?:deals (\w+) damage|loses (\w+) life)", o)
+    if pm:
+        c.punish_draw = _num(pm.group(1) or pm.group(2), default=1)
+    elif repeat and c.types & {"creature", "artifact", "enchantment", "planeswalker"}:
+        tm2 = re.search(r"deals (\w+) damage to (?:target opponent|target player|any target|that player)", o)
+        if tm2 and not dm:
+            c.drain_turn = max(c.drain_turn, round(_num(tm2.group(1), default=1) / 3))  # one opponent per trigger
+    wm = re.search(r"each player (?:discards their hand, then )?draws (\w+) cards?|"
+                   r"each opponent draws (\w+) cards?|each player shuffles their hand[^.]*draws (\w+)", o)
+    if wm:
+        c.opp_draws = _num(wm.group(1) or wm.group(2) or wm.group(3), default=3)
+    elif re.search(r"each player discards their hand, then draws cards equal", o):
+        c.opp_draws = 6
+    if re.search(r"(that player|each player|each opponent) draws an additional card", o):
+        c.opp_draw_turn = 1
     mm = re.search(r"(?:each opponent|target player|target opponent) mills (\w+)", o)
     if mm:
         n = _num(mm.group(1), default=3)
@@ -190,8 +208,8 @@ class Goldfish:
         engines = 0
         opp = [{"life": OPP_LIFE, "poison": 0, "cmd": 0, "lib": 92} for _ in range(3)]
         attackers = []        # [power, infect, toxic, is_commander, first attack turn]
-        drain_engines = mill_engines = 0
-        dmg = {"combat": 0, "commander": 0, "drain": 0, "poison": 0, "mill": 0}
+        drain_engines = mill_engines = punishers = extra_draws = 0
+        dmg = {"combat": 0, "commander": 0, "noncombat": 0, "poison": 0, "mill": 0}
 
         def alive():
             return [o for o in opp if o["life"] > 0 and o["poison"] < 10 and o["cmd"] < 21 and o["lib"] >= 0]
@@ -281,6 +299,8 @@ class Goldfish:
                         return 2
                     if c.draw or c.engine:
                         return 4
+                    if c.punish_draw or (c.opp_draws and punishers):
+                        return 2.5
                     if c.power >= 2 or c.drain_turn or c.mill_turn or c.drain_once or c.mill_once:
                         return 3.5
                     return 5
@@ -340,10 +360,17 @@ class Goldfish:
                     engines += 1
                 if "creature" in c.types and (c.power or c.infect):
                     attackers.append([c.power, c.infect, c.toxic, isinstance(pick, tuple), t if c.haste else t + 1])
+                punishers += c.punish_draw
+                extra_draws += c.opp_draw_turn
                 for o in alive():
                     if c.drain_once:
                         o["life"] -= c.drain_once
-                        dmg["drain"] += c.drain_once
+                        dmg["noncombat"] += c.drain_once
+                    if c.opp_draws:
+                        o["lib"] -= c.opp_draws
+                        if punishers:
+                            o["life"] -= punishers * c.opp_draws
+                            dmg["noncombat"] += punishers * c.opp_draws
                     if c.mill_once:
                         o["lib"] -= c.mill_once
                         dmg["mill"] += c.mill_once
@@ -374,8 +401,11 @@ class Goldfish:
             for o in alive():
                 if drain_engines:
                     o["life"] -= drain_engines
-                    dmg["drain"] += drain_engines
-                o["lib"] -= 1 + mill_engines
+                    dmg["noncombat"] += drain_engines
+                if punishers:  # every opponent draws once per turn, plus extra draws (Nekusar...)
+                    o["life"] -= punishers * (1 + extra_draws)
+                    dmg["noncombat"] += punishers * (1 + extra_draws)
+                o["lib"] -= 1 + extra_draws + mill_engines
                 dmg["mill"] += mill_engines
             if res["kill"] is None and not alive():
                 res["kill"] = t
@@ -405,7 +435,7 @@ class Goldfish:
             done = sorted(x for x in turns if x is not None)
             out["median"] = done[len(done) // 2] if len(done) * 2 >= n else None
             return out
-        totals = {k: sum(g["dmg"][k] for g in games) for k in ("combat", "commander", "drain", "poison", "mill")}
+        totals = {k: sum(g["dmg"][k] for g in games) for k in ("combat", "commander", "noncombat", "poison", "mill")}
         all_dmg = sum(totals.values()) or 1
         win = {"solo_kill": kill_by_turn([g["kill"] for g in games]),
                "sources": {k: round(100 * v / all_dmg) for k, v in totals.items() if v},

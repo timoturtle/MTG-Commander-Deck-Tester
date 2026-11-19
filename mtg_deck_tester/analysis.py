@@ -100,11 +100,17 @@ def game_metrics(results):
             bucket["commander_turn"].append(p["commander_turn"])
             bucket["damage_dealt"].append(p["damage_dealt"])
             bucket["damage_taken"].append(p["damage_taken"])
+            if "damage_dealt_combat" in p:
+                bucket["damage_dealt_combat"].append(p["damage_dealt_combat"])
+                bucket["damage_dealt_noncombat"].append(p["damage_dealt_noncombat"])
+                bucket["damage_taken_combat"].append(p["damage_taken_combat"])
+                bucket["damage_taken_noncombat"].append(p["damage_taken_noncombat"])
             bucket["mulligans"].append(p["mulligans"])
             bucket["spells_per_turn"].append(round(p["spells_cast"] / p["own_turns"], 2) if p["own_turns"] else None)
             bucket["elim_turn"].append(p["elim_round"])
             bucket["survived"].append(0 if p["eliminated"] else 1)
-    keys = ["place", "lands_t4", "first_spell", "commander_turn", "damage_dealt", "damage_taken",
+    keys = ["place", "lands_t4", "first_spell", "commander_turn", "damage_dealt", "damage_dealt_combat",
+            "damage_dealt_noncombat", "damage_taken", "damage_taken_combat", "damage_taken_noncombat",
             "mulligans", "spells_per_turn", "elim_turn", "survived"]
     return {k: {"you": _avg(mine[k]), "field": _avg(field[k])} for k in keys}
 
@@ -207,9 +213,12 @@ def weak_points_and_suggestions(results, deck, profile, card_db, opponents, brac
         weak.append(("Slow first plays", f"First spell on turn {you('first_spell')} vs. {fld('first_spell')}."))
     if worse("damage_dealt", (fld('damage_dealt') or 0) * 0.25, higher_is_bad=False):
         weak.append(("Low pressure", f"You dealt {you('damage_dealt')} damage per game vs. {fld('damage_dealt')} for the field - "
-                                      "the deck struggles to close games."))
+                                      "the deck struggles to close games. (Life loss that isn't damage, "
+                                      "like drain effects, isn't counted here.)"))
     elif you("damage_dealt") and fld("damage_dealt") and you("damage_dealt") > fld("damage_dealt") * 1.25:
-        strengths.append(f"Strong pressure: {you('damage_dealt')} damage per game vs. {fld('damage_dealt')}.")
+        split = (f" ({you('damage_dealt_combat')} combat, {you('damage_dealt_noncombat')} non-combat)"
+                 if you("damage_dealt_combat") is not None else "")
+        strengths.append(f"Strong pressure: {you('damage_dealt')} damage per game{split} vs. {fld('damage_dealt')}.")
     if worse("damage_taken", (fld('damage_taken') or 0) * 0.25):
         weak.append(("Weak defence", f"You took {you('damage_taken')} damage per game vs. {fld('damage_taken')} - "
                                       "opponents find you an easy target."))

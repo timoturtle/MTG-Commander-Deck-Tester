@@ -122,6 +122,7 @@ class DemoSpellbook:
 def demo_card_data(card_db, decks):
     """Invent card data (types, costs, prices) for demo decks so every report section has content."""
     card_db.resolve = lambda names: []
+    card_db.cheapest = lambda *a, **k: None
     card_db.save = lambda: None
     names = {n for d in decks for n in d.all_names()} | {f"Demo Staple {i}" for i in range(1, 16)}
     for n in names:

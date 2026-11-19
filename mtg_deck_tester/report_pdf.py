@@ -240,9 +240,17 @@ def _md(text, S, W):
     return out
 
 
+SOURCE_LABEL = {"combat": "combat", "commander": "commander (combat)", "noncombat": "non-combat triggers & drain",
+                "drain": "non-combat triggers & drain", "poison": "poison", "mill": "mill"}
+
 METRICS = [("place", "Average pod finish", False), ("lands_t4", "Lands by your turn 4", True),
            ("first_spell", "First spell (your turn)", False), ("commander_turn", "Commander cast (your turn)", False),
-           ("damage_dealt", "Damage dealt per game", True), ("damage_taken", "Damage taken per game", False),
+           ("damage_dealt", "Damage dealt per game", True),
+           ("damage_dealt_combat", "   of which combat damage", True),
+           ("damage_dealt_noncombat", "   of which non-combat damage (triggers, spells)", True),
+           ("damage_taken", "Damage taken per game", False),
+           ("damage_taken_combat", "   of which combat damage", False),
+           ("damage_taken_noncombat", "   of which non-combat damage", False),
            ("mulligans", "Mulligans per game", False), ("spells_per_turn", "Spells per turn", True),
            ("survived", "Games survived to the end", True)]
 
@@ -286,7 +294,7 @@ def build_pdf(rep, path):
         tiles.append((t(med(win_any.get("median"), 15).replace("turn ", "T").replace("after T15", "T15+")),
                       "Typical solo win (goldfish)", None))
     if rep.get("value") is not None:
-        tiles.append((t(eur(rep["value"])), "Deck value (Cardmarket)", None))
+        tiles.append((t(eur(rep["value"])), "Deck value, cheapest printings", None))
     story.append(_tiles(tiles, S, W))
     story.append(Spacer(1, 8))
     story.append(Badges(me["places"], size=15, gap=4))
@@ -351,8 +359,8 @@ def build_pdf(rep, path):
         head = [Paragraph("Add", S["th"]), Paragraph("Price", S["thr"]), Paragraph("Cut", S["th"])]
         story.append(_list(rows, [W * 0.45, W * 0.13, W * 0.42], S, header=head))
         story.append(Spacer(1, 3))
-        story.append(Paragraph("Prices: Cardmarket trend via Scryfall for one printing; your copies may cost less.",
-                               S["footnote"]))
+        story.append(Paragraph("Prices: cheapest paper printing, Cardmarket trend price via Scryfall (cards under "
+                               "€0.30 use one standard printing).", S["footnote"]))
 
     _section(story, "How to improve", S)
     story += [Paragraph(t(s), S["bullet"], bulletText="•") for s in (A["suggestions"] or
@@ -423,7 +431,9 @@ def build_pdf(rep, path):
             col = GREEN if (y > f) == higher else RED
         ys, fs = (f"{round(y * 100)}%", "–" if f is None else f"{round(f * 100)}%") if k == "survived" else \
             (f"{y:g}", "–" if f is None else f"{f:g}")
-        rows.append([Paragraph(label, S["cell"]),
+        sub_row = label.startswith("   ")
+        rows.append([Paragraph(("&nbsp;&nbsp;&nbsp;&nbsp;" if sub_row else "") + t(label.strip()),
+                               S["cellsec"] if sub_row else S["cell"]),
                      Paragraph(f"<b>{ys}</b>", ParagraphStyle("y", parent=S["cellr"], textColor=col)),
                      Paragraph(fs, S["cellr"])])
     _section(story, "You vs. the field", S)
@@ -510,7 +520,7 @@ def _combo_section(CD, rep, S, W):
     if wa:
         out.append(Paragraph("Win check: how fast the deck wins alone", S["h3"]))
         src = win.get("sources") or {}
-        src_txt = ", ".join(f"{k} {v}%" for k, v in sorted(src.items(), key=lambda x: -x[1])) or "–"
+        src_txt = ", ".join(f"{SOURCE_LABEL.get(k, k)} {v}%" for k, v in sorted(src.items(), key=lambda x: -x[1])) or "–"
         pairs = [("Wins alone by turn 8 / 10 / 12", f"{wa['t8']}% / {wa['t10']}% / {wa['t12']}%"),
                  ("Typical winning turn", med(wa.get("median"), 15)),
                  ("Where the damage comes from", src_txt)]
@@ -627,15 +637,23 @@ def _moments_section(R, names, S, W):
                  Spacer(1, 3)]
         rows = []
         for T in g["timeline"][:18]:
-            plays = [", ".join(T["cast"])] if T["cast"] else []
+            casts = T.get("cast_detail") or T["cast"]
+            plays = [", ".join(casts)] if casts else []
             life = T.get("life") or {}
             lt = f"<b>{life.get('D01', '–')}</b> · " + " · ".join(str(life.get(s, '–')) for s in opp)
             notes = [fix(e["text"]) for e in T.get("events", [])]
-            if T.get("taken", 0) >= 8:
-                notes.append(f"took {T['taken']} damage")
-            if T.get("dealt", 0) >= 8:
-                notes.append(f"dealt {T['dealt']} damage")
-            if not T["cast"] and not notes and T["round"] > 2:
+            def dmg_note(word, total, other):
+                if total < 8:
+                    return None
+                if "dealt_other" not in T:
+                    return f"{word} {total} damage"
+                kind = "all non-combat" if other == total else ("all combat" if not other else f"{other} non-combat")
+                return f"{word} {total} damage ({kind})"
+            for nt in (dmg_note("took", T.get("taken", 0), T.get("taken_other", 0)),
+                       dmg_note("dealt", T.get("dealt", 0), T.get("dealt_other", 0))):
+                if nt:
+                    notes.append(nt)
+            if not casts and not notes and T["round"] > 2:
                 continue  # only lands played: nothing to tell
             rows.append([Paragraph(str(T["round"]), S["cellc"]), Paragraph(t(" · ".join(plays) or "–"), S["cell"]),
                          Paragraph(lt, S["cell"]), Paragraph(t("; ".join(notes)), S["cellsec"])])

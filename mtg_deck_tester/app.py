@@ -132,9 +132,12 @@ def _run_job(req):
         est, why = analysis.estimate_bracket(prof)
         bracket = int(req.get("bracket") or 0) or est
         job.say(f"Bracket {bracket}" + ("" if req.get("bracket") else f" (estimated: {why})"))
+        if not DEMO:
+            CARD_DB.cheapest(deck.all_names(), 0.3, log=job.say, label=" in your deck")
         my_value, unpriced = deck_value(deck, CARD_DB)
         if not DEMO:
-            job.say(f"Your deck is worth about €{my_value:,.0f}" + (f" ({unpriced} cards without a price)" if unpriced else ""))
+            job.say(f"Your deck is worth about €{my_value:,.0f} in its cheapest printings"
+                    + (f" ({unpriced} cards without a price)" if unpriced else ""))
         value_match = bool(req.get("value_match")) and my_value > 0 and not DEMO
         if value_match:
             job.say(f"Looking for opponents worth €{my_value * 0.7:,.0f}–€{my_value * 1.3:,.0f} (±30%).")
@@ -197,6 +200,7 @@ def _run_job(req):
         if not DEMO:
             job.say("Preparing opponent decks for Forge...")
             CARD_DB.resolve({n for o in opps for n in o.all_names()})
+            CARD_DB.cheapest([n for o in opps for n in o.all_names()], 1.0, log=job.say, label=" in the opponent decks")
             idents = sorted(opponents.identity_str(opponents._identity(o, CARD_DB)) for o in opps)
             job.say("Colour identities in the field: " + ", ".join(idents))
         for o in opps:
@@ -277,6 +281,10 @@ def _run_job(req):
                                     combo_data, edh, opps, budget_eur)
         edh_view = budget.edhrec_view(deck, CARD_DB, edh)
         edh_cards = (edh or {}).get("cards") or {}
+        if not DEMO:
+            extra = [a["card"] for a in ana["add_candidates"]] + [a["missing"] for a in (combo_data or {}).get("almost", [])]
+            CARD_DB.resolve(extra)
+            CARD_DB.cheapest(extra, 0.3)
         for a in ana["add_candidates"]:
             a["price"] = CARD_DB.price(a["card"])
             a["edhrec"] = (edh_cards.get(a["card"]) or {}).get("inclusion")
@@ -433,6 +441,8 @@ class Handler(BaseHTTPRequestHandler):
                     warns.append(f"Scryfall lookup failed: {e}")
             prof = analysis.deck_profile(deck, CARD_DB)
             est, why = analysis.estimate_bracket(prof)
+            if not DEMO and deck.size:
+                CARD_DB.cheapest(deck.all_names(), 0.3)
             value = deck_value(deck, CARD_DB)[0] if not DEMO and deck.size else None
             return self._send(200, {"commanders": deck.commanders, "size": deck.size, "warnings": warns,
                                     "unknown": missing, "profile": prof, "bracket_estimate": est,
@@ -491,6 +501,7 @@ def main():
     DEMO = DEMO or args.demo
     if DEMO:
         CARD_DB.resolve = lambda names: []
+        CARD_DB.cheapest = lambda *a, **k: None
         CARD_DB.save = lambda: None
     try:
         srv = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)

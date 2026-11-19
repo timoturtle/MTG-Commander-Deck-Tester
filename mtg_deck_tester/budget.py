@@ -53,6 +53,8 @@ def recommend(deck, profile, card_db, bracket, weak_titles, analysis, combo_data
 
     try:
         card_db.resolve(list(cand))
+        top = sorted(cand.values(), key=lambda c: -c["score"])[:80]
+        card_db.cheapest([c["card"] for c in top], 0.3)
     except Exception:
         pass
     adds = []
@@ -137,6 +139,10 @@ def edhrec_view(deck, card_db, edh):
         return None
     cards = edh["cards"]
     have = {n.lower() for n in deck.all_names()}
+    try:
+        card_db.cheapest([n for n, e in cards.items() if (e.get("inclusion") or 0) >= 30 and n.lower() not in have], 0.3)
+    except Exception:
+        pass
     missing = [{"card": n, "inclusion": e["inclusion"], "synergy": e.get("synergy"), "price": card_db.price(n)}
                for n, e in cards.items() if n.lower() not in have and (e.get("inclusion") or 0) >= 30]
     missing.sort(key=lambda m: -(m["inclusion"] or 0))

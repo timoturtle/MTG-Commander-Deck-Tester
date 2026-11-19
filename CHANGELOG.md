@@ -4,6 +4,20 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [3.1.0] - 2026-11-19
+
+### Changed
+- Prices and deck values now use the cheapest paper printing of each card instead of Scryfall's
+  default printing, so special printings no longer inflate a deck's value.
+- Damage is split into combat and non-combat everywhere: "You vs. the field", key moments and the
+  goldfish win check ("non-combat triggers & drain" instead of counting triggers as combat).
+- The win check understands draw punishers (Nekusar, Underworld Dreams), extra draws and wheels.
+
+### Fixed
+- Key moments now explain repeated casts of the same spell (buyback, returned from the graveyard,
+  bounced, flashback, commander recast). The Forge helper records how cards come back.
+- Losses to commander damage name the commander instead of the last creature that dealt damage.
+
 ## [3.0.0] - 2026-11-19
 
 ### Added

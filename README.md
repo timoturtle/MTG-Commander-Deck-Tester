@@ -238,12 +238,13 @@ decks' games last. "Only play my pods" is about three times faster but gives no 
 4. **Variety:** at most one deck with your own commander (two in a 16-deck field), no duplicate
    commanders, no copies of your own deck, and only legal 100-card decks.
 5. **Value (optional):** with **Match my deck's value** on, only decks worth within ±30% of yours
-   are used. If there aren't enough, the app widens to ±50%, then any value, and says so in the log.
+   are used, comparing every deck at its cheapest printings. If there aren't enough, the app widens to ±50%, then any value, and says so in the log.
 
 ## Upgrades, prices and EDHREC
 
-- **Prices** come from Scryfall (Cardmarket trend price in EUR, for one printing of each card).
-  Your own copies or other printings may cost less. Prices are refreshed weekly.
+- **Prices** are for the **cheapest paper printing** of each card (Cardmarket trend price in EUR via
+  Scryfall), so expensive special printings in a decklist don't inflate its value. Cards whose
+  standard printing costs under €0.30 aren't looked up individually. Prices are refreshed weekly.
 - **Recommended upgrades:** every possible addition gets an impact score from how often players
   run it with your commander on EDHREC, its synergy with your commander, the opponent decks,
   whether it fixes one of your weak points (ramp, draw, removal, board wipes, interaction) and
@@ -278,7 +279,9 @@ they play. The report therefore adds a section that doesn't rely on Forge's AI:
 
 - **Win check:** the same goldfish games continue to turn 15 against three opponents at 40 life who
   never block. It reports how often the deck wins alone by turn 8, 10 and 12, the typical winning
-  turn and where the damage comes from (combat, commander damage, drain, poison, mill). Cards that
+  turn and where the damage comes from (combat, commander damage, non-combat triggers and drain,
+  poison, mill). Draw punishers like Nekusar or Underworld Dreams count every card the opponents
+  draw, including extra draws and wheels. Cards that
   say "you win the game" are listed with how often they could be cast by turn 8.
 
 The goldfish is an estimate: there are no opponents, and card effects are simplified to ramp, card
@@ -289,7 +292,16 @@ token decks are faster than shown. Use it to compare versions of your deck rathe
 
 For every game of your deck the report shows a short round-by-round summary (one round = every
 player took a turn): the spells you cast, everyone's life total at the end of the round, who was
-knocked out and by which card, and big damage swings. In the app, click a game to open it.
+knocked out and by which card, and big damage swings, split into combat and non-combat damage.
+In the app, click a game to open it.
+
+When a spell is cast more than once in a game, the summary says how it came back, for example
+"cast 3× – returned to hand as it resolved (e.g. buyback)", "returned from the graveyard to hand"
+or "cast from the graveyard (e.g. flashback)". Forge's own log doesn't record this, so the app's
+Forge helper adds it; without the helper it says "how it came back isn't in Forge's log".
+
+**You vs. the field** also splits damage into combat damage and non-combat damage (triggers like
+Nekusar's, burn spells). Life loss that isn't damage, such as drain effects, isn't counted there.
 
 ## Opening hands and early plays
 

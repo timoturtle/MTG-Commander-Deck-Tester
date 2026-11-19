@@ -362,6 +362,15 @@ PLAYER = re.compile(r"Ai\(\d+\)-(D\d\d)")
 TURN = re.compile(r"^Turn (\d+) \((.+)\)\s*$")
 CARD_ID = re.compile(r"\s*\(\d+\)$")
 OPENING = re.compile(r"^Opening Hand: Ai\(\d+\)-(D\d\d): ?(.*)$")
+MOVED = re.compile(r"^\[Moved\] Ai\(\d+\)-(D\d\d): (.+?) from (\w+) to (\w+)$")
+MOVE_REASON = {("Stack", "Hand"): "returned to hand as it resolved (e.g. buyback)",
+               ("Graveyard", "Hand"): "returned from the graveyard to hand",
+               ("Battlefield", "Hand"): "bounced back to hand",
+               ("Exile", "Hand"): "returned from exile to hand",
+               ("Graveyard", "Stack"): "cast from the graveyard (e.g. flashback)",
+               ("Exile", "Stack"): "cast from exile",
+               ("Library", "Stack"): "cast from the library",
+               ("Graveyard", "Battlefield"): "returned from the graveyard to the battlefield"}
 ATTACK = re.compile(r"^Ai\(\d+\)-(D\d\d) assigned (.+) to attack ")
 CAST = re.compile(r"^Ai\(\d+\)-(D\d\d) cast (.+?)(?: targeting (.+))?$")
 DAMAGE = re.compile(r"^(.+?) deals (\d+) (.*?)damage to (.+?)\.?$")
@@ -388,6 +397,11 @@ class PlayerStats:
     cards_cast: list = field(default_factory=list)
     damage_dealt: int = 0
     damage_taken: int = 0
+    damage_dealt_combat: int = 0
+    damage_dealt_noncombat: int = 0
+    damage_taken_combat: int = 0
+    damage_taken_noncombat: int = 0
+    recasts: dict = field(default_factory=dict)  # card -> how often it was cast again, and how it came back
     damage_taken_from: dict = field(default_factory=dict)  # deck id -> dmg
     life: int = 40
     elim_round: int | None = None
@@ -453,9 +467,12 @@ def parse_game(stdout, deck_ids, commanders_of, cards_of, focus="D01"):
     timeline, rnd, first_seat = [], 0, None
     round_of_index = {}
     killer_card = {}
+    cast_count, last_move = {}, {}   # (deck, card) -> casts so far / how it last came back
 
     def new_round():
-        timeline.append({"round": rnd, "cast": [], "lands": 0, "dealt": 0, "taken": 0, "events": [], "life": {}})
+        timeline.append({"round": rnd, "cast": [], "cast_detail": [], "lands": 0, "dealt": 0, "taken": 0,
+                         "dealt_combat": 0, "dealt_other": 0, "taken_combat": 0, "taken_other": 0,
+                         "events": [], "life": {}})
 
     for i, (cap, msg) in enumerate(entries):
         round_of_index[i] = rnd
@@ -481,6 +498,14 @@ def parse_game(stdout, deck_ids, commanders_of, cards_of, focus="D01"):
                 if c0 and c0.group(1) == focus:
                     card0 = CARD_ID.sub("", c0.group(2).strip())
                     T["cast"].append(card0)
+                    k = cast_count.get((focus, card0), 0)
+                    if k == 0:
+                        T["cast_detail"].append(card0)
+                    elif card0 in commanders_of.get(focus, set()):
+                        T["cast_detail"].append(f"{card0} (cast {k + 1}× – recast from the command zone)")
+                    else:
+                        why = last_move.pop((focus, card0), None) or "how it came back isn't in Forge's log"
+                        T["cast_detail"].append(f"{card0} (cast {k + 1}× – {why})")
                     if card0 in commanders_of.get(focus, set()):
                         T["events"].append(f"You cast your commander {card0}")
         for d in PLAYER.findall(msg):
@@ -503,6 +528,12 @@ def parse_game(stdout, deck_ids, commanders_of, cards_of, focus="D01"):
                 km = re.search(r"kept a hand of (\d+)", msg)
                 if km:
                     P[pm.group(1)].kept_size = int(km.group(1))
+        elif cap == "Zone Change":
+            mv = MOVED.match(msg)
+            if mv and mv.group(1) in P:
+                why = MOVE_REASON.get((mv.group(3), mv.group(4)))
+                if why:
+                    last_move[(mv.group(1), CARD_ID.sub("", mv.group(2).strip()))] = why
         elif cap == "Combat":
             am = ATTACK.match(msg)
             if am and am.group(1) in P:
@@ -521,6 +552,10 @@ def parse_game(stdout, deck_ids, commanders_of, cards_of, focus="D01"):
                 d, card = c.group(1), CARD_ID.sub("", c.group(2).strip())
                 ps = P[d]
                 owner_of_card[card] = d
+                n_before = cast_count.get((d, card), 0)
+                cast_count[(d, card)] = n_before + 1
+                if n_before and card not in commanders_of.get(d, set()):
+                    ps.recasts[card] = ps.recasts.get(card, 0) + 1
                 ps.spells_cast += 1
                 ps.cards_cast.append(card)
                 t = cur_own_turn.get(d, 0)
@@ -536,18 +571,30 @@ def parse_game(stdout, deck_ids, commanders_of, cards_of, focus="D01"):
                 tgt = PLAYER.search(dm.group(4))
                 if tgt and tgt.group(1) in P and dm.group(4).strip().startswith("Ai("):
                     victim, amount = tgt.group(1), int(dm.group(2))
+                    combat = "non-combat" not in dm.group(3)
                     src_player = PLAYER.search(dm.group(1))
                     src = src_player.group(1) if src_player and dm.group(1).startswith("Ai(") \
                         else owner_for(dm.group(1).strip())
                     P[victim].damage_taken += amount
+                    if combat:
+                        P[victim].damage_taken_combat += amount
+                    else:
+                        P[victim].damage_taken_noncombat += amount
                     if timeline:
+                        kind = "combat" if combat else "other"
                         if victim == focus:
                             timeline[-1]["taken"] += amount
+                            timeline[-1]["taken_" + kind] += amount
                         elif src == focus:
                             timeline[-1]["dealt"] += amount
+                            timeline[-1]["dealt_" + kind] += amount
                     if src and src != victim and src in P:
-                        killer_card[victim] = CARD_ID.sub("", dm.group(1).strip())
+                        killer_card[victim] = CARD_ID.sub("", dm.group(1).strip()) + ("" if combat else " (non-combat)")
                         P[src].damage_dealt += amount
+                        if combat:
+                            P[src].damage_dealt_combat += amount
+                        else:
+                            P[src].damage_dealt_noncombat += amount
                         P[victim].damage_taken_from[src] = P[victim].damage_taken_from.get(src, 0) + amount
                         last_damage_from[victim] = src
         elif cap == "Life":
@@ -620,7 +667,10 @@ def parse_game(stdout, deck_ids, commanders_of, cards_of, focus="D01"):
             who = killers.get(d)
             how = ps.loss_reason.replace("lost because ", "").replace("lost due to ", "")
             by = f" by {killer_card[d]}" if d in killer_card and who and \
-                any(k in how for k in ("life total", "21 damage", "poison")) else ""
+                any(k in how for k in ("life total", "poison")) else ""
+            if "21 damage" in how and who and commanders_of.get(who):
+                by = f" by {sorted(commanders_of[who])[0]}"
+                how = "21 commander damage"
             if d == focus:
                 txt = f"You were knocked out{by} ({how})"
             else:

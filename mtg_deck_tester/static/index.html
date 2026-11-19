@@ -197,7 +197,7 @@ dialog::backdrop{background:rgba(0,0,0,.35)}
       <button data-v="8">8</button><button data-v="12">12</button><button data-v="16">16</button></div></div>
     <div class="row"><span class="label">Rounds</span><div class="stepper"><button id="rMinus" aria-label="Fewer rounds">−</button><output id="rounds">5</output><button id="rPlus" aria-label="More rounds">+</button></div></div>
     <div class="row"><label class="label" for="fast">Only play my pods<span class="sub">About 3× faster, no overall standing</span></label><label class="switch"><input type="checkbox" id="fast"><span></span></label></div>
-    <div class="row"><label class="label" for="valueMatch">Match my deck’s value<span class="sub">Opponents within ±30% of your deck’s price</span></label><label class="switch"><input type="checkbox" id="valueMatch"><span></span></label></div>
+    <div class="row"><label class="label" for="valueMatch">Match my deck’s value<span class="sub">Opponents within ±30%, cheapest printings</span></label><label class="switch"><input type="checkbox" id="valueMatch"><span></span></label></div>
   </div>
   <div class="group-foot" id="estimate"></div>
 
@@ -447,7 +447,7 @@ async function showReport(id){
   if (!R.fast_mode) h += `<div class="tile"><div class="v">${ord(me.rank)} <small>of ${n}</small></div><div class="l">Final standing, ${me.points} points</div></div>`;
   h += `<div class="tile"><div class="v">${me.avg_place} <small>avg</small></div><div class="l">Pod finish, ${me.wins} win${me.wins === 1 ? "" : "s"} in ${me.games}</div></div>`;
   if (gf.win_any) h += `<div class="tile"><div class="v">${gf.win_any.median ? "T" + gf.win_any.median : "T15+"}</div><div class="l">Typical solo win (goldfish)</div></div>`;
-  if (rep.value != null) h += `<div class="tile"><div class="v">${eur(rep.value)}</div><div class="l">Deck value</div></div>`;
+  if (rep.value != null) h += `<div class="tile"><div class="v">${eur(rep.value)}</div><div class="l">Deck value, cheapest printings</div></div>`;
   h += `</div><h4>Your pods</h4><div class="pods">` + mine.map(g => {
     const p = g.players.D01, how = p.won ? "won" : (g.draw && !p.eliminated ? "stopped" : "knocked out");
     return `<div class="pod">${podSvg(g)}${how}</div>`; }).join("") + `</div><p class="note">Your seat has the blue ring. Gold 1st, silver 2nd, bronze 3rd, grey 4th.</p>`;
@@ -479,7 +479,8 @@ async function showReport(id){
       ["Commander on curve", gf.cmd_on_curve + "%"], ["Mana screw / flood", `${gf.screw}% / ${gf.flood}%`]];
     if (gf.combo_any) rows.push(["Any combo by turn 4 / 6 / 8", `${gf.combo_any.t4}% / ${gf.combo_any.t6}% / ${gf.combo_any.t8}%`]);
     if (gf.win_any) rows.push(["Wins alone by turn 8 / 10 / 12", `${gf.win_any.t8}% / ${gf.win_any.t10}% / ${gf.win_any.t12}%`]);
-    if (gf.win && gf.win.sources) rows.push(["Damage comes from", Object.entries(gf.win.sources).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}%`).join(", ")]);
+    const SRC = {combat:"combat", commander:"commander (combat)", noncombat:"non-combat triggers & drain", drain:"non-combat triggers & drain", poison:"poison", mill:"mill"};
+    if (gf.win && gf.win.sources) rows.push(["Damage comes from", Object.entries(gf.win.sources).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${SRC[k] || k} ${v}%`).join(", ")]);
     if (gf.win && gf.win.alt_win_cards.length) rows.push(["“Win the game” cards castable by turn 8", `${(gf.win.altwin || {}).t8 || 0}%`]);
     h += list(["", ""].map(t => ({t})), rows.map(([a, b]) => `<tr><td>${esc(a)}</td><td class="r">${esc(b)}</td></tr>`)).replace(/<tr><th[^]*?<\/tr>/, "");
     if (!CD.available) h += `<p class="note err">${esc(CD.error)}</p>`;
@@ -498,13 +499,16 @@ async function showReport(id){
   if (rep.ai_error) h += `<p class="note err">Coaching notes unavailable: ${esc(rep.ai_error)}</p>`;
 
   const ML = {place:["Average pod finish",false], lands_t4:["Lands by your turn 4",true], first_spell:["First spell (your turn)",false],
-    commander_turn:["Commander cast (your turn)",false], damage_dealt:["Damage dealt per game",true], damage_taken:["Damage taken per game",false],
+    commander_turn:["Commander cast (your turn)",false], damage_dealt:["Damage dealt per game",true],
+    damage_dealt_combat:["  of which combat",true], damage_dealt_noncombat:["  of which non-combat (triggers, spells)",true],
+    damage_taken:["Damage taken per game",false], damage_taken_combat:["  of which combat",false], damage_taken_noncombat:["  of which non-combat",false],
     mulligans:["Mulligans per game",false], spells_per_turn:["Spells per turn",true], survived:["Games survived to the end",true]};
   h += `<h3 class="sec">You vs. the field</h3>` + list(["Measure", {t:"You", r:1}, {t:"Others", r:1}], Object.entries(ML).filter(([k]) => A.metrics[k] && A.metrics[k].you != null).map(([k, [lab, hi]]) => {
     let y = A.metrics[k].you, f = A.metrics[k].field, cls = "";
     if (f != null && Math.abs(y - f) > .05 * Math.max(1, Math.abs(f))) cls = (y > f) === hi ? "good" : "bad";
     if (k === "survived") { y = Math.round(y * 100) + "%"; f = f == null ? "–" : Math.round(f * 100) + "%"; }
-    return `<tr><td>${lab}</td><td class="r ${cls}"><b>${y}</b></td><td class="r">${f ?? "–"}</td></tr>`; }));
+    const subRow = lab.startsWith("  ");
+    return `<tr><td${subRow ? ' class="dim" style="padding-left:28px"' : ""}>${lab.trim()}</td><td class="r ${cls}"><b>${y}</b></td><td class="r">${f ?? "–"}</td></tr>`; }));
   if (!R.fast_mode) h += `<h3 class="sec">Standings</h3>` + list(["#", "Deck", {t:"Points", r:1}, "Pod finishes"], R.standings.map(s =>
     `<tr class="${s.id === "D01" ? "me" : ""}"><td>${s.rank}</td><td>${esc(s.name)}${s.id === "D01" ? " (you)" : ""}</td><td class="r">${s.points}</td><td>${s.places.join(" ")}</td></tr>`));
   h += `<h3 class="sec">Opponents</h3>` + list(["Deck", "Commander", "Colours", {t:"Value", r:1}], Object.entries(R.decks).filter(([k]) => k !== "D01").map(([k, d]) =>
@@ -521,10 +525,12 @@ async function showReport(id){
     const fix = s => Object.entries(names).reduce((a, [k, v]) => a.split(k + " ").join(v + " "), s);
     h += `<h3 class="sec">Key moments</h3><p class="sec-sub">What your deck did each round, with life totals at the end of the round.</p>` + withTl.map(g => {
       const p = g.players.D01, opp = g.seats.filter(s => s !== "D01");
-      const rows = g.timeline.filter(T => T.cast.length || T.events.length || T.taken >= 8 || T.round <= 2).map(T => {
-        const notes = T.events.map(e => fix(e.text)); if (T.taken >= 8) notes.push(`took ${T.taken} damage`); if (T.dealt >= 8) notes.push(`dealt ${T.dealt} damage`);
+      const dmg = (w, tot, oth) => tot < 8 ? null : (oth == null ? `${w} ${tot} damage` : `${w} ${tot} damage (${oth === tot ? "all non-combat" : oth ? oth + " non-combat" : "all combat"})`);
+      const rows = g.timeline.filter(T => T.cast.length || T.events.length || T.taken >= 8 || T.dealt >= 8 || T.round <= 2).map(T => {
+        const notes = T.events.map(e => fix(e.text));
+        [dmg("took", T.taken, T.taken_other), dmg("dealt", T.dealt, T.dealt_other)].forEach(x => x && notes.push(x));
         const life = `<b>${T.life.D01 ?? "–"}</b> · ` + opp.map(s => T.life[s] ?? "–").join(" · ");
-        return `<tr><td>${T.round}</td><td>${esc(T.cast.join(", ")) || '<span class="dim">–</span>'}</td><td class="r">${life}</td><td class="dim">${esc(notes.join("; "))}</td></tr>`; });
+        return `<tr><td>${T.round}</td><td>${esc((T.cast_detail || T.cast).join(", ")) || '<span class="dim">–</span>'}</td><td class="r">${life}</td><td class="dim">${esc(notes.join("; "))}</td></tr>`; });
       return `<details class="moment"><summary><span>Round ${g.round}: ${ord(p.place)} place</span><span class="dim">vs ${esc(opp.map(s => names[s]).join(", "))}</span></summary>
         <div class="scroll"><table class="t"><tr><th>#</th><th>Your spells</th><th class="r">Life (you · others)</th><th>Notes</th></tr>${rows.join("")}</table></div></details>`;
     }).join("");
