@@ -21,12 +21,14 @@ final standing, your place in every pod, your deck's weak points and concrete su
 - [Installation on Windows](#installation-on-windows)
 - [Using the app](#using-the-app)
 - [How opponents are chosen](#how-opponents-are-chosen)
+- [Focus cards](#focus-cards)
 - [Upgrades, prices and EDHREC](#upgrades-prices-and-edhrec)
 - [Combos and consistency](#combos-and-consistency)
 - [Opening hands and early plays](#opening-hands-and-early-plays)
 - [How the tournament works](#how-the-tournament-works)
 - [Play style: AI personality and mulligans](#play-style-ai-personality-and-mulligans)
 - [Speed and sleep](#speed-and-sleep)
+- [Appearance and colour-blind mode](#appearance-and-colour-blind-mode)
 - [Optional extras](#optional-extras)
 - [Where your files are](#where-your-files-are)
 - [Updating and uninstalling](#updating-and-uninstalling)
@@ -40,6 +42,8 @@ final standing, your place in every pod, your deck's weak points and concrete su
 - **Weak points**, found by comparing your deck with the rest of the field across all games:
   land drops by turn 4, when your commander comes down, damage dealt and taken, mulligans,
   spells per turn and how you lost (combat, commander damage, combos...)
+- **Focus cards**: a close look at cards you're unsure about – when they were drawn and cast,
+  what they did, and how games went with and without them
 - **Recommended upgrades with prices**: add/cut swaps with the most impact for a budget you choose,
   based on EDHREC, your weak points and combos (prices from Cardmarket, in EUR)
 - **EDHREC comparison**: popular cards with your commander that you don't play, and your unusual picks
@@ -213,7 +217,9 @@ Tip: in File Explorer, Shift + right-click the folder → **Copy as path**, then
      public. (Moxfield links need a Moxfield User-Agent, see [Optional extras](#optional-extras).)
    - Or copy the list: in Archidekt **Export → Text → Copy**, in Moxfield **Export** → copy the list,
      and paste it into the big text field. If the commander isn't found, type it into **Commander**.
-2. Click **Check deck** to see lands, ramp, draw, removal, an estimated bracket and the deck's value.
+2. Optional: type cards you're unsure about into **Focus cards**, one per line.
+   Click **Check deck** to see lands, ramp, draw, removal, an estimated bracket, the deck's value
+   and which focus cards were found.
 3. Choose the **bracket** (or Auto), the number of **decks** and **rounds**. Optionally switch on
    **Match my deck's value** and enter a **budget** for upgrades.
 4. Optional: set the **play style** (AI personality, mulligan rules) and paste links of decks you
@@ -227,18 +233,35 @@ decks' games last. "Only play my pods" is about three times faster but gives no 
 
 ## How opponents are chosen
 
-1. **Popular, but varied:** the app looks at a few hundred of the most-viewed public Commander decks
-   on Archidekt (and Moxfield, if enabled) and picks at random among them, with more popular decks
-   more likely. Decks you faced in your last 3 runs are rarely picked again, so repeated runs see
-   different opponents. Recently edited but unknown decks are not used.
+Opponents are random, like sitting down at random tables in a game store:
+
+1. **Random decks:** the app reads random pages from the first ~2,000 public Commander decks on
+   Archidekt (and Moxfield, if enabled) and picks among them completely at random. Colours and
+   commanders play no role, so your own colours or even your own commander can show up, as often
+   as they do among real decks.
 2. **Same bracket:** only decks with your bracket. Decks without a bracket set are used only if
    there aren't enough.
-3. **Varied colours:** every colour identity gets one deck before any identity gets a second, and
-   your own colour identity is counted too. The log lists the identities in the field.
-4. **Variety:** at most one deck with your own commander (two in a 16-deck field), no duplicate
-   commanders, no copies of your own deck, and only legal 100-card decks.
-5. **Value (optional):** with **Match my deck's value** on, only decks worth within ±30% of yours
-   are used, comparing every deck at its cheapest printings. If there aren't enough, the app widens to ±50%, then any value, and says so in the log.
+3. **Value (optional):** with **Match my deck's value** on, only decks worth within ±30% of yours
+   are used, comparing every deck at its cheapest printings. If there aren't enough, the app widens
+   to ±50%, then any value, and says so in the log.
+4. **Fresh tables:** decks you faced in your last 3 runs are only used if nothing else is left.
+5. **Valid decks only:** no copies of your own deck, no deck twice, only legal 100-card decks.
+
+## Focus cards
+
+Unsure about a card you just added? Type it into **Focus cards** (one per line, up to 10) before
+starting a test. **Check deck** confirms which names were found in your deck. The report then has
+a section for each card:
+
+- **In the Forge games:** how many games it was cast in and how often, on which of your turns, whether
+  it was in the opening hand, the damage it dealt (combat and non-combat), opponents it finished off,
+  and your average place in games with and without it, plus a game-by-game table.
+- **When the deck plays on purpose (goldfish):** how often it's drawn by turn 4 and 8 and cast by turn 8.
+- **Context:** mana value, role (ramp, draw, removal...), price, how often it's played with your
+  commander on EDHREC, and combos it's part of.
+- **Observations** marked ✓ (for the card), ✗ (against) and • (neutral). They're facts, not a verdict:
+  with few games, a card can look weak just because it wasn't drawn, which the goldfish numbers show.
+  With Claude coaching notes on, Claude also gives a keep / cut / test-more recommendation for each.
 
 ## Upgrades, prices and EDHREC
 
@@ -251,6 +274,10 @@ decks' games last. "Only play my pods" is about three times faster but gives no 
   whether it completes a combo allowed in your bracket. Each addition is paired with a cut: cards
   you never cast in testing or that are rarely played with your commander. Cards that fill a role
   your deck is already short on are never suggested as cuts.
+- **Cuts based on testing:** "never cast in testing" is only used from 10 games of your deck on
+  (e.g. 10 rounds, or two runs' worth). With fewer games, a card that was never cast was often just
+  never drawn, so it isn't suggested as a cut.
+- **Basic lands** are never suggested as additions.
 - **Budget:** enter an amount and the app picks the highest-impact swaps that fit it. Without a
   budget it shows the highest-impact swaps regardless of price.
 - **EDHREC comparison:** popular cards with your commander that you don't play, and your unusual
@@ -347,6 +374,16 @@ These options need the helper described in [Opening hands](#opening-hands-and-ea
   MacBook's lid, the tournament pauses and continues after waking; sleep time doesn't count towards
   the time limit.
 
+## Appearance and colour-blind mode
+
+In **Settings → Appearance**:
+
+- **Theme:** System (follows your Mac or PC), Light or Dark. The PDF always stays light, which is
+  best for printing.
+- **Good / bad colours:** Green/red (standard), Blue/orange or Blue/red. The last two avoid
+  red–green, which about 1 in 12 men can't tell apart. The choice is used in the app and the PDF.
+  Good and bad values are also always marked ✓ and ✗, so the colour is never the only signal.
+
 ## Optional extras
 
 ### Coaching notes from Claude
@@ -385,6 +422,8 @@ Never share `settings.json`: it contains your API keys.
 
 ## Limitations
 
+- Forge's AI often casts its commander later than a human would. If the goldfish shows your deck can
+  cast it on curve, the report says the late casts are Forge's choice, not a problem with the deck.
 - Forge's AI plays reasonably but not like a strong human: it's weaker with complex combos,
   politics and some stack tricks. Look for patterns across rounds, not single games.
 - Very new cards may not be in Forge yet; unknown cards are listed in the log.
@@ -406,12 +445,13 @@ mtg_deck_tester/
 ├── scryfall.py     card data lookup and cache
 ├── archidekt.py    Archidekt search and deck download
 ├── moxfield.py     Moxfield search and deck download (opt-in)
-├── opponents.py    picks a popular, varied field of opponents
+├── opponents.py    picks a random field of opponents (bracket, optional value)
 ├── forge.py        runs Forge's simulation mode and parses its game logs
 ├── java/HandSim.java  Forge helper: one session for many games, opening hands, mulligan rules,
 │                      AI profiles, stall detection (compiled locally against your Forge)
 ├── edhrec.py       EDHREC commander data
 ├── budget.py       priced upgrade suggestions and EDHREC comparison
+├── focus.py        focus cards: everything the test shows about chosen cards
 ├── power.py        keeps the computer awake during a test
 ├── fonts/          Inter font for the PDF (SIL Open Font License)
 ├── tournament.py   Swiss pods of four, run on parallel Forge sessions

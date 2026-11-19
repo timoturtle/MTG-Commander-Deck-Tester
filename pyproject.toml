@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mtg-commander-deck-tester"
-version = "3.1.1"
+version = "3.3.0"
 description = "Test Magic: The Gathering Commander decks in AI-played pod tournaments using Forge"
 readme = "README.md"
 requires-python = ">=3.9"

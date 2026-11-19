@@ -13,8 +13,8 @@ import urllib.parse
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import (APP_NAME, __version__, analysis, archidekt, budget, combos, demo, edhrec, forge, moxfield, opponents,
-               power, report_md, spellbook, tournament)
+from . import (APP_NAME, __version__, analysis, archidekt, budget, combos, demo, edhrec, focus, forge, moxfield,
+               opponents, power, report_md, spellbook, tournament)
 from .decklist import parse_decklist
 from .scryfall import CardDB, deck_value
 
@@ -28,7 +28,9 @@ for _d in (HOME, CACHE, RESULTS):
     os.makedirs(_d, exist_ok=True)
 
 DEFAULT_SETTINGS = {"forge_folder": "", "api_key": "", "model": "claude-sonnet-5-5", "workers": 0,
-                    "clock": 600, "max_turns": 60, "stall_turns": 16, "moxfield_user_agent": ""}
+                    "clock": 600, "max_turns": 60, "stall_turns": 16, "moxfield_user_agent": "",
+                    "theme": "system", "palette": "standard"}
+PALETTES = ("standard", "blue-orange", "red-blue")
 AI_PROFILES = ["Default", "Cautious", "Reckless", "Experimental", "Hard", "Hardest"]
 FORGE_GUESSES = ["~/Forge", "~/forge", "~/Applications/Forge", "/Applications/Forge", "~/Downloads/forge*",
                  "~/Downloads/Forge*", "C:/Forge", "C:/Games/Forge", "~/Desktop/Forge*",
@@ -104,7 +106,9 @@ def build_pdf(rep, workdir, log=print):
     """Returns an error message, or '' when the PDF was written."""
     try:
         from . import report_pdf
-        report_pdf.build_pdf(rep, os.path.join(workdir, "report.pdf"))
+        palette = load_settings().get("palette", "standard")
+        report_pdf.build_pdf(rep, os.path.join(workdir, "report.pdf"), palette)
+        rep["pdf_palette"] = palette
         return ""
     except ImportError:
         msg = "the 'reportlab' package is missing (start the app with the start script)"
@@ -150,6 +154,11 @@ def _run_job(req):
             moved = opponents.clean_commanders(deck, CARD_DB)
             if moved:
                 job.say(f"Note: {', '.join(moved)} can't be a commander; moved it into the deck.")
+        focus_cards, focus_missing = focus.match_names(focus.parse_focus(req.get("focus", "")), deck)
+        if focus_cards:
+            job.say("Focus cards: " + ", ".join(focus_cards))
+        if focus_missing:
+            job.say("Note: not in your deck, so not followed: " + ", ".join(focus_missing))
         prof = analysis.deck_profile(deck, CARD_DB)
         est, why = analysis.estimate_bracket(prof)
         bracket = int(req.get("bracket") or 0) or est
@@ -231,7 +240,7 @@ def _run_job(req):
         # combos + goldfish (before the games, so you see results early in the log)
         sb = demo.DemoSpellbook() if DEMO else spellbook.Spellbook(CACHE, log=job.say)
         try:
-            combo_data = combos.analyze(deck, opps, CARD_DB, bracket, sb, log=job.say)
+            combo_data = combos.analyze(deck, opps, CARD_DB, bracket, sb, log=job.say, focus=focus_cards)
             gf = combo_data["goldfish"]
             job.say(f"Goldfish: keepable 7-card hand {gf['keep7']}%, commander on curve {gf['cmd_on_curve']}%"
                     + (f", combo by turn 8 in {gf['combo_any']['t8']}% of games" if gf.get("combo_any") else ""))
@@ -286,6 +295,7 @@ def _run_job(req):
         job.say("Analysing results...")
         ana = analysis.weak_points_and_suggestions(res, deck, prof, CARD_DB, opps, bracket)
         if combo_data:
+            combos.explain_commander_timing(ana, combo_data)
             combo_data["forge_check"] = combos.forge_crosscheck(combo_data, res, deck, CARD_DB)
             cw, cs = combos.weak_points(combo_data, bracket)
             ana["weak_points"] += [{"title": t, "detail": d} for t, d in cw]
@@ -313,9 +323,11 @@ def _run_job(req):
         if combo_data:
             for a in combo_data.get("almost", []):
                 a["price"] = CARD_DB.price(a["missing"])
+        focus_report = focus.analyze(focus_cards, deck, res, CARD_DB, combo_data, edh) if focus_cards else []
         rep = {"id": rid, "created": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
                "app_version": __version__, "deck": deck.to_dict(), "profile": prof, "bracket": bracket,
                "results": res, "analysis": ana, "combos": combo_data, "upgrades": upgrades, "edhrec": edh_view,
+               "focus": focus_report, "focus_missing": focus_missing,
                "value": my_value, "value_match": value_match,
                "settings_used": {"ai_profile_you": cfg["ai_profile_you"] or "Default",
                                  "ai_profile_opp": cfg["ai_profile_opp"] or "Default",
@@ -329,7 +341,7 @@ def _run_job(req):
                 try:
                     rep["ai_text"] = analysis.ai_analysis(s["api_key"], s.get("model") or DEFAULT_SETTINGS["model"],
                                                           deck, prof, ana, res, bracket, combo_data, upgrades,
-                                                          edh_view, budget_eur)
+                                                          edh_view, budget_eur, focus_report)
                 except Exception as e:
                     rep["ai_error"] = str(e)[:400]
                     job.say("AI analysis failed: " + rep["ai_error"])
@@ -409,11 +421,13 @@ class Handler(BaseHTTPRequestHandler):
             rid, d = self._report_dir()
             name = {"/api/report": "report.json", "/api/report.pdf": "report.pdf", "/api/report.md": "report.md"}[path]
             p = os.path.join(d, name) if d else None
-            if (path == "/api/report.pdf" and d and not os.path.exists(p)
-                    and os.path.exists(os.path.join(d, "report.json"))):
-                # older reports, or a PDF that failed: build it now
+            rep0 = None
+            if path == "/api/report.pdf" and d and os.path.exists(os.path.join(d, "report.json")):
                 with open(os.path.join(d, "report.json"), encoding="utf-8") as f:
                     rep0 = json.load(f)
+            if rep0 is not None and (not os.path.exists(p) or
+                                     rep0.get("pdf_palette", "standard") != load_settings().get("palette", "standard")):
+                # older reports, a PDF that failed, or the colour palette changed: build it now
                 err = build_pdf(rep0, d)
                 if err:
                     return self._send(500, f"The PDF couldn't be created: {err}".encode("utf-8"),
@@ -443,6 +457,10 @@ class Handler(BaseHTTPRequestHandler):
             for k in ("forge_folder", "model"):
                 if k in body:
                     s[k] = str(body[k]).strip().strip("'\"")
+            if body.get("theme") in ("system", "light", "dark"):
+                s["theme"] = body["theme"]
+            if body.get("palette") in PALETTES:
+                s["palette"] = body["palette"]
             for k in ("workers", "clock", "max_turns", "stall_turns"):
                 if k in body:
                     s[k] = max(0 if k == "workers" else 1, int(body[k]))
@@ -460,6 +478,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {"ok": ok, "messages": msgs})
         if path == "/api/parse":
             deck, warns = parse_decklist(body.get("text", ""), body.get("commander", ""))
+            focus_found, focus_missing = focus.match_names(focus.parse_focus(body.get("focus", "")), deck)
             missing = []
             if not DEMO and deck.size:
                 try:
@@ -476,7 +495,8 @@ class Handler(BaseHTTPRequestHandler):
             value = deck_value(deck, CARD_DB)[0] if not DEMO and deck.size else None
             return self._send(200, {"commanders": deck.commanders, "size": deck.size, "warnings": warns,
                                     "unknown": missing, "profile": prof, "bracket_estimate": est,
-                                    "bracket_reason": why, "value": value})
+                                    "bracket_reason": why, "value": value, "focus_found": focus_found,
+                                    "focus_missing": focus_missing, "cards": sorted(set(deck.all_names()))})
         if path == "/api/start":
             if JOB.state == "running":
                 return self._send(409, {"error": "A test is already running."})

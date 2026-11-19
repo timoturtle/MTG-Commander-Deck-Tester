@@ -49,9 +49,9 @@ class Moxfield:
     def search(self, commanders, bracket, pages=3):
         if not self.enabled:
             return []
-        self.log("Searching Moxfield for popular decks...")
+        self.log("Searching Moxfield for random decks...")
         found = []
-        for page in [1] + sorted(random.sample(range(2, 11), pages - 1)):
+        for page in sorted(random.sample(range(1, 21), pages)):
             q = {"pageNumber": page, "pageSize": 64, "sortType": "views", "sortDirection": "descending",
                  "fmt": "commander", "board": "mainboard"}
             try:

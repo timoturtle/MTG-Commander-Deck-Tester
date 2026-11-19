@@ -139,6 +139,11 @@ def card_performance(results, deck, card_db):
 
 
 BASIC_LANDS = {"plains", "island", "swamp", "mountain", "forest", "wastes"}
+MIN_GAMES_NEVER_CAST = 10  # below this, "never cast" mostly means "never drawn"
+
+
+def is_basic(name):
+    return name.lower().replace("snow-covered ", "").strip() in BASIC_LANDS
 
 
 def _is_land(name, card_db):
@@ -263,8 +268,9 @@ def weak_points_and_suggestions(results, deck, profile, card_db, opponents, brac
 
     # ---- cut candidates: rarely cast, expensive
     perf, n_games = card_performance(results, deck, card_db)
-    cuts = [r for r in perf if r["cast_games"] == 0 and (r["cmc"] or 0) >= 5][:6]
-    if n_games >= 3:
+    cuts = []
+    if n_games >= MIN_GAMES_NEVER_CAST:
+        cuts = [r for r in perf if r["cast_games"] == 0 and (r["cmc"] or 0) >= 5][:6]
         cuts += [r for r in perf if r["cast_games"] == 0 and r not in cuts][: max(0, 6 - len(cuts))]
 
     # ---- add candidates: popular in the similar decks, legal in your colours
@@ -295,7 +301,7 @@ def weak_points_and_suggestions(results, deck, profile, card_db, opponents, brac
         if info["game_changer"] and not gc_ok:
             continue
         tags = classify(info)
-        if "land" in tags and not ("Few lands" in needs) and info["type_line"].startswith("Basic"):
+        if info["type_line"].startswith("Basic") or is_basic(info["name"]):
             continue
         adds.append({"card": info["name"], "in_decks": k, "tags": sorted(tags),
                      "fits_need": bool(tags & want_tags)})
@@ -340,7 +346,8 @@ def weak_points_and_suggestions(results, deck, profile, card_db, opponents, brac
     return {"metrics": m, "weak_points": [{"title": t, "detail": d} for t, d in weak],
             "strengths": strengths, "suggestions": sugg, "cut_candidates": cuts, "add_candidates": adds,
             "loss_reasons": dict(reasons), "eliminated_by": killer_names, "card_performance": perf,
-            "draws": draws, "games_played": len(games), "early_game": early}
+            "draws": draws, "games_played": len(games), "early_game": early,
+            "min_games_never_cast": MIN_GAMES_NEVER_CAST}
 
 
 AI_SYSTEM = ("You are an expert Magic: The Gathering Commander deckbuilder and coach. You get a decklist "
@@ -350,6 +357,9 @@ AI_SYSTEM = ("You are an expert Magic: The Gathering Commander deckbuilder and c
              "If combo data is included, judge combo decks by the goldfish speed and combo data rather than "
              "by Forge results alone, and suggest how to protect or speed up the combos, or how to get them past the field's interaction. "
              "If a budget in EUR is given, keep the total price of your suggested additions within it, using the prices provided. "
+             "If focus_cards are given, the player is unsure about these cards: add a section 'Focus cards' with a short "
+             "keep / cut / test more recommendation for each, based on the evidence and the card's role in the deck, "
+             "and say when the sample is too small to judge. "
              "Answer in Markdown with these sections: 'Summary' (2-3 sentences), 'Weak points' (most important "
              "first, each tied to evidence), 'Swaps' (a table of 6-10 concrete cut -> add pairs with a short reason; "
              "only cut cards that are in the deck; only add real cards legal in the colour identity), and "
@@ -357,7 +367,7 @@ AI_SYSTEM = ("You are an expert Magic: The Gathering Commander deckbuilder and c
 
 
 def ai_analysis(api_key, model, deck, profile, analysis, results, bracket, combo_data=None, upgrades=None,
-                edhrec_view=None, budget=None):
+                edhrec_view=None, budget=None, focus_report=None):
     me = next(s for s in results["standings"] if s["id"] == USER)
     payload = {
         "commander": deck.commanders, "bracket": bracket, "colour_identity": profile["identity"],
@@ -377,6 +387,11 @@ def ai_analysis(api_key, model, deck, profile, analysis, results, bracket, combo
                                           for r in analysis["early_game"]["games"]],
         "popular_in_similar_decks_not_in_yours": [a["card"] for a in analysis["add_candidates"]],
     }
+    if focus_report:
+        payload["focus_cards"] = [{k: f[k] for k in ("card", "cmc", "roles", "price", "edhrec", "games", "cast_games",
+                                                     "casts", "avg_first_turn", "damage", "kills", "avg_place_cast",
+                                                     "avg_place_not", "goldfish", "combos", "observations")}
+                                  for f in focus_report]
     if upgrades:
         payload["budget_eur"] = budget
         payload["priced_upgrade_candidates"] = [{k: a[k] for k in ("card", "price", "why")} for a in upgrades["top_adds"]]

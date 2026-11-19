@@ -5,23 +5,47 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <title>MTG Commander Deck Tester</title>
+<script>
+// apply the saved appearance before the page draws (no flash)
+try { const a = JSON.parse(localStorage.getItem("appearance") || "{}");
+  if (a.theme && a.theme !== "system") document.documentElement.dataset.theme = a.theme;
+  if (a.palette) document.documentElement.dataset.palette = a.palette; } catch (e) {}
+</script>
 <style>
+/* light theme (default) */
 :root{
   --bg:#F2F2F7; --card:#FFFFFF; --fill:rgba(118,118,128,.12); --fill2:rgba(118,118,128,.08);
   --label:#1D1D1F; --label2:#6E6E73; --label3:#AEAEB2; --sep:rgba(60,60,67,.18);
-  --blue:#007AFF; --green:#248A3D; --red:#D70015; --orange:#C93400; --red-tint:#FDEDEE;
+  --blue:#007AFF; --orange:#C93400;
   --gold:#E0A800; --silver:#8E8E93; --bronze:#B4693C; --slate:#48484A;
   --bar:rgba(242,242,247,.72);
+  --good:#248A3D; --bad:#D70015; --bad-tint:#FDEDEE; --switch-on:#34C759;
   --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI Variable","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
   --display:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI Variable Display","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
-  --r:12px;
+  --r:12px; color-scheme:light;
 }
-@media (prefers-color-scheme:dark){:root{
+/* dark theme: follows the system unless Light is chosen, or forced with Dark */
+@media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
   --bg:#000000; --card:#1C1C1E; --fill:rgba(118,118,128,.24); --fill2:rgba(118,118,128,.16);
   --label:#F5F5F7; --label2:#98989D; --label3:#636366; --sep:rgba(84,84,88,.6);
-  --blue:#0A84FF; --green:#30D158; --red:#FF453A; --orange:#FF9F0A; --red-tint:rgba(255,69,58,.14);
-  --bar:rgba(0,0,0,.72);
+  --blue:#0A84FF; --orange:#FF9F0A; --bar:rgba(0,0,0,.72);
+  --good:#30D158; --bad:#FF453A; --bad-tint:rgba(255,69,58,.14); --switch-on:#30D158; color-scheme:dark;
 }}
+:root[data-theme="dark"]{
+  --bg:#000000; --card:#1C1C1E; --fill:rgba(118,118,128,.24); --fill2:rgba(118,118,128,.16);
+  --label:#F5F5F7; --label2:#98989D; --label3:#636366; --sep:rgba(84,84,88,.6);
+  --blue:#0A84FF; --orange:#FF9F0A; --bar:rgba(0,0,0,.72);
+  --good:#30D158; --bad:#FF453A; --bad-tint:rgba(255,69,58,.14); --switch-on:#30D158; color-scheme:dark;
+}
+/* colour-blind palettes: good/bad without red-green */
+:root[data-palette="blue-orange"]{ --good:#0062B8; --bad:#C24A00; --bad-tint:#FCEFE6; --switch-on:#0062B8; }
+:root[data-palette="red-blue"]{ --good:#0062B8; --bad:#D70015; --bad-tint:#FDEDEE; --switch-on:#0062B8; }
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"])[data-palette="blue-orange"]{ --good:#5AB0FF; --bad:#FF9F45; --bad-tint:rgba(255,159,69,.16); --switch-on:#0A84FF; }
+  :root:not([data-theme="light"])[data-palette="red-blue"]{ --good:#5AB0FF; --bad:#FF453A; --bad-tint:rgba(255,69,58,.14); --switch-on:#0A84FF; }
+}
+:root[data-theme="dark"][data-palette="blue-orange"]{ --good:#5AB0FF; --bad:#FF9F45; --bad-tint:rgba(255,159,69,.16); --switch-on:#0A84FF; }
+:root[data-theme="dark"][data-palette="red-blue"]{ --good:#5AB0FF; --bad:#FF453A; --bad-tint:rgba(255,69,58,.14); --switch-on:#0A84FF; }
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--label);font:15px/1.4 var(--font);-webkit-font-smoothing:antialiased}
@@ -75,7 +99,7 @@ textarea.field{min-height:180px;resize:vertical;font-size:13px;line-height:1.45}
 .switch input{position:absolute;inset:0;opacity:0;margin:0;cursor:pointer}
 .switch span{position:absolute;inset:0;border-radius:16px;background:var(--fill);transition:background .2s}
 .switch span::after{content:"";position:absolute;top:2px;left:2px;width:27px;height:27px;border-radius:50%;background:#fff;box-shadow:0 3px 8px rgba(0,0,0,.15),0 1px 1px rgba(0,0,0,.16);transition:transform .2s}
-.switch input:checked + span{background:#34C759}
+.switch input:checked + span{background:var(--switch-on)}
 .switch input:checked + span::after{transform:translateX(20px)}
 .switch input:focus-visible + span{outline:3px solid var(--blue);outline-offset:2px}
 
@@ -95,7 +119,7 @@ textarea.field{min-height:180px;resize:vertical;font-size:13px;line-height:1.45}
 .chip{background:var(--fill2);border-radius:7px;padding:3px 8px;font-size:12px;color:var(--label2)}
 .chip b{color:var(--label);font-weight:600}
 .note{font-size:13px;color:var(--label2)}
-.note.err{color:var(--red)}
+.note.err{color:var(--bad)}
 
 /* right column */
 .card{background:var(--card);border-radius:var(--r);padding:18px 20px;margin-bottom:20px}
@@ -129,8 +153,8 @@ table.t tr:first-child td{border-top:0}
 table.t .r{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 table.t tr.me td{background:rgba(0,122,255,.08);font-weight:600}
 .dim{color:var(--label2)}
-.good{color:var(--green)} .bad{color:var(--red)}
-.weak{background:var(--red-tint);border-radius:var(--r);padding:10px 14px;margin-bottom:8px}
+.good{color:var(--good)} .bad{color:var(--bad)}
+.weak{background:var(--bad-tint);border-radius:var(--r);padding:10px 14px;margin-bottom:8px}
 .weak b{display:block;font-weight:600}
 .weak span{color:var(--label2);font-size:13px}
 ul.plain{margin:6px 0;padding-left:20px} ul.plain li{margin:4px 0}
@@ -185,6 +209,8 @@ dialog::backdrop{background:rgba(0,0,0,.35)}
     </div>
     <div class="row"><label class="label" for="deckName">Name</label><input class="field" id="deckName" style="text-align:right" placeholder="Optional"></div>
     <div class="row"><label class="label" for="commander">Commander</label><input class="field" id="commander" style="text-align:right" placeholder="If not tagged"></div>
+    <div class="row stack"><label for="focus" class="sub" style="margin:0 0 4px">Focus cards <span class="dim">· optional</span></label>
+      <textarea class="field" id="focus" style="min-height:52px" placeholder="Cards you’re unsure about, one per line"></textarea></div>
   </div>
   <div class="group-foot"><button class="btn small tint" id="checkDeck" style="margin-top:8px">Check deck</button></div>
   <div id="parsed" class="group-foot"></div>
@@ -244,6 +270,14 @@ dialog::backdrop{background:rgba(0,0,0,.35)}
 <dialog id="settings" aria-labelledby="setTitle">
   <div class="sheet-head"><button id="closeSettings">Cancel</button><h2 id="setTitle">Settings</h2><button class="done" id="saveSettings">Done</button></div>
   <div class="sheet-body">
+    <div class="group-title">Appearance</div>
+    <div class="group">
+      <div class="row"><span class="label">Theme</span><div class="seg" id="theme" role="group" aria-label="Theme">
+        <button data-v="system">System</button><button data-v="light">Light</button><button data-v="dark">Dark</button></div></div>
+      <div class="row"><span class="label">Good / bad colours</span><div class="seg" id="palette" role="group" aria-label="Good and bad colours">
+        <button data-v="standard">Green/red</button><button data-v="blue-orange">Blue/orange</button><button data-v="red-blue">Blue/red</button></div></div>
+    </div>
+    <div class="group-foot">Blue/orange and Blue/red avoid red–green, which about 1 in 12 men can’t tell apart. Good and bad values are also marked ✓ and ✗. The palette is used in the PDF too; the PDF stays light for printing.</div>
     <div class="group-title">Forge</div>
     <div class="group">
       <div class="row stack"><label for="forgeFolder" class="sub" style="margin:0 0 4px">Forge folder</label><input class="field" id="forgeFolder" placeholder="/Users/you/Forge"></div>
@@ -304,6 +338,16 @@ document.querySelectorAll("[data-s]").forEach(b => b.onclick = () => {
 $("#mullOn").onchange = () => document.querySelectorAll(".mull").forEach(r => r.hidden = !$("#mullOn").checked);
 $("#fast").onchange = updateEstimate;
 
+// ---------- appearance
+function applyAppearance(theme, palette){
+  const root = document.documentElement;
+  if (!theme || theme === "system") delete root.dataset.theme; else root.dataset.theme = theme;
+  if (!palette || palette === "standard") delete root.dataset.palette; else root.dataset.palette = palette;
+  try { localStorage.setItem("appearance", JSON.stringify({theme, palette})); } catch (e) {}
+}
+segmented($("#theme"), "system", () => applyAppearance($("#theme").dataset.value, $("#palette").dataset.value));
+segmented($("#palette"), "standard", () => applyAppearance($("#theme").dataset.value, $("#palette").dataset.value));
+
 // ---------- settings
 let settings = {};
 async function loadSettings(){
@@ -317,12 +361,15 @@ async function loadSettings(){
   $("#moxState").textContent = settings.moxfield_set ? "· saved" : "";
   $("#aiHint").textContent = settings.api_key_set ? "Uses your Claude API key" : "Needs an API key in Settings";
   $("#demoBanner").hidden = !settings.demo;
+  segmented($("#theme"), settings.theme || "system", () => applyAppearance($("#theme").dataset.value, $("#palette").dataset.value));
+  segmented($("#palette"), settings.palette || "standard", () => applyAppearance($("#theme").dataset.value, $("#palette").dataset.value));
+  applyAppearance(settings.theme || "system", settings.palette || "standard");
   const opts = settings.ai_profiles.map(p => `<option>${p}</option>`).join("");
   if (!$("#profYou").options.length) { $("#profYou").innerHTML = opts; $("#profOpp").innerHTML = opts; }
   updateEstimate();
 }
 $("#openSettings").onclick = async () => { await loadSettings(); $("#settings").showModal(); };
-$("#closeSettings").onclick = () => $("#settings").close();
+$("#closeSettings").onclick = () => { applyAppearance(settings.theme || "system", settings.palette || "standard"); $("#settings").close(); };
 $("#checkForge").onclick = async () => {
   $("#forgeMsg").textContent = "Checking…";
   const r = await api("/api/check", {forge_folder: $("#forgeFolder").value.trim()});
@@ -331,7 +378,8 @@ $("#checkForge").onclick = async () => {
 };
 $("#saveSettings").onclick = async () => {
   const b = {forge_folder: $("#forgeFolder").value.trim(), workers: +$("#workers").value, clock: +$("#clock").value || 600,
-             max_turns: +$("#maxTurns").value || 60, model: $("#model").value.trim()};
+             max_turns: +$("#maxTurns").value || 60, model: $("#model").value.trim(),
+             theme: $("#theme").dataset.value, palette: $("#palette").dataset.value};
   if ($("#apiKey").value.trim()) b.api_key = $("#apiKey").value.trim();
   if ($("#moxUa").value.trim()) b.moxfield_user_agent = $("#moxUa").value.trim();
   await api("/api/settings", b); $("#apiKey").value = ""; $("#moxUa").value = "";
@@ -351,13 +399,15 @@ $("#importBtn").onclick = async () => {
 $("#checkDeck").onclick = async () => {
   $("#parsed").innerHTML = '<span class="note">Looking up cards…</span>';
   try {
-    const r = await api("/api/parse", {text: $("#deck").value, commander: $("#commander").value});
+    const r = await api("/api/parse", {text: $("#deck").value, commander: $("#commander").value, focus: $("#focus").value});
     const p = r.profile;
     let h = `<div><b>${esc(r.commanders.join(" & ") || "No commander found")}</b> <span class="dim">· ${r.size} cards · estimated bracket ${r.bracket_estimate}</span></div>
       <div class="chips">${[["Lands",p.lands],["Ramp",p.ramp],["Draw",p.draw],["Removal",p.removal],["Wipes",p.wipes],["Avg. mana value",p.avg_cmc]]
         .map(([k,v]) => `<span class="chip">${k} <b>${v}</b></span>`).join("")}${r.value != null ? `<span class="chip">Value <b>${eur(r.value)}</b></span>` : ""}</div>`;
     r.warnings.forEach(w => h += `<div class="note err">${esc(w)}</div>`);
     if (r.unknown.length) h += `<div class="note err">Not recognised: ${esc(r.unknown.join(", "))}</div>`;
+    if (r.focus_found.length) h += `<div class="note">Focus: ${esc(r.focus_found.join(", "))}</div>`;
+    if (r.focus_missing.length) h += `<div class="note err">Not in your deck: ${esc(r.focus_missing.join(", "))}</div>`;
     $("#parsed").innerHTML = h;
   } catch (e) { $("#parsed").innerHTML = `<span class="note err">${esc(e.message)}</span>`; }
 };
@@ -373,7 +423,7 @@ function updateEstimate(){
 // ---------- run
 $("#start").onclick = async () => {
   if (!$("#deck").value.trim()) { $("#parsed").innerHTML = '<span class="note err">Import or paste your deck first.</span>'; return; }
-  const body = {text: $("#deck").value, commander: $("#commander").value, deck_name: $("#deckName").value,
+  const body = {text: $("#deck").value, commander: $("#commander").value, deck_name: $("#deckName").value, focus: $("#focus").value,
     bracket: $("#bracket").dataset.value, field_size: +$("#field").dataset.value, rounds: +$("#rounds").value,
     fast: $("#fast").checked, value_match: $("#valueMatch").checked, use_ai: $("#useAi").checked,
     budget: +$("#budget").value || null, opponent_links: $("#links").value,
@@ -502,6 +552,31 @@ function renderReport(rep){
   h += `<h3 class="sec">Weak points</h3>` + (A.weak_points.length ? A.weak_points.map(w => `<div class="weak"><b>${esc(w.title)}</b><span>${esc(w.detail)}</span></div>`).join("") : `<p>Nothing stood out as clearly weak.</p>`);
   if (A.strengths.length) h += `<h4>Strengths</h4><ul class="plain">${A.strengths.map(s => `<li>${esc(s)}</li>`).join("")}</ul>`;
 
+  if ((rep.focus && rep.focus.length) || (rep.focus_missing && rep.focus_missing.length)) {
+    const sym = {"+": '<span class="good">✓</span>', "−": '<span class="bad">✗</span>', "·": '<span class="dim">•</span>'};
+    h += `<h3 class="sec">Focus cards</h3><p class="sec-sub">What happened with the cards you asked about, in the Forge games and when the deck plays on purpose (goldfish).</p>`;
+    if (rep.focus_missing && rep.focus_missing.length) h += `<p class="note err">Not in your deck: ${esc(rep.focus_missing.join(", "))}</p>`;
+    for (const f of rep.focus || []) {
+      const g = f.goldfish || {}, dm = f.damage, meta = [f.cmc != null ? "MV " + f.cmc : null, f.roles.join(", ") || null, f.price != null ? eur(f.price) : null, f.edhrec != null ? Math.round(f.edhrec) + "% on EDHREC" : null].filter(Boolean).join(" · ");
+      const facts = [["Cast in", `${f.cast_games} of ${f.games} games (${f.casts} cast${f.casts === 1 ? "" : "s"})`]];
+      if (f.avg_first_turn) facts.push(["First cast, your turn (average)", f.avg_first_turn]);
+      if (f.opening_known) facts.push(["In the opening hand", `${f.opening_hand} of ${f.opening_known} games`]);
+      if (dm.combat + dm.noncombat) facts.push(["Damage dealt to opponents", `${dm.combat + dm.noncombat} (${dm.noncombat} non-combat)`]);
+      if (f.kills) facts.push(["Opponents finished off", f.kills]);
+      if (f.avg_place_cast != null && f.avg_place_not != null) facts.push(["Average place: cast / not cast", `${f.avg_place_cast} / ${f.avg_place_not}`]);
+      if (g.seen_by_t8 != null) facts.push(["Goldfish: drawn by turn 4 / 8", `${g.seen_by_t4}% / ${g.seen_by_t8}%`]);
+      if (g.cast_by_t8 != null && !f.commander) facts.push(["Goldfish: cast by turn 8 (average turn)", `${g.cast_by_t8}% (${g.avg_cast_turn ?? "–"})`]);
+      h += `<div class="card" style="padding:14px 16px;margin-bottom:12px"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><b style="font-size:17px">${esc(f.card)}${f.commander ? ' <span class="dim" style="font-weight:400">commander</span>' : ""}</b><span class="dim">${esc(meta)}</span></div>
+        <table class="t" style="margin-top:8px">${facts.map(([a, b]) => `<tr><td>${esc(a)}</td><td class="r"><b>${esc(b)}</b></td></tr>`).join("")}</table>
+        <ul class="plain" style="list-style:none;padding-left:0">${f.observations.map(o => `<li>${sym[o.sign] || "•"} ${esc(o.text)}</li>`).join("")}</ul>
+        ${f.combos.length ? `<p class="note">Combos: ${f.combos.map(c => `<a href="${esc(c.url)}" target="_blank" rel="noopener">${esc(c.pieces.join(" + "))}</a>`).join("; ")}</p>` : ""}
+        <details><summary class="note" style="cursor:pointer;color:var(--blue)">Game by game</summary>
+        <div class="scroll"><table class="t"><tr><th>Round</th><th>Place</th><th>Opening hand</th><th>Cast on turn</th><th class="r">Damage</th><th>Finished off</th></tr>
+        ${f.per_game.map(r => `<tr><td>${r.round}</td><td>${ord(r.place)}</td><td>${r.in_opening_hand == null ? "–" : r.in_opening_hand ? "✓" : ""}</td><td>${r.casts.map(c => "T" + c.turn + (c.own_turn ? "" : "*")).join(", ") || "–"}</td><td class="r">${(r.damage.combat + r.damage.noncombat) || "–"}</td><td>${esc(r.kills.join(", ")) || "–"}</td></tr>`).join("")}
+        </table></div><p class="note">* cast during an opponent’s turn</p></details></div>`;
+    }
+    if ((rep.focus || []).some(f => f.small_sample)) h += `<p class="note">Small sample: with fewer than 10 games, a card may look weak just because it wasn’t drawn – the goldfish numbers show how often it shows up.</p>`;
+  }
   const U = rep.upgrades || {};
   if (U.swaps && U.swaps.length) {
     h += `<h3 class="sec">Recommended upgrades</h3><p class="sec-sub">${U.budget ? `Best impact for ${eur(U.budget)}: ${eur(U.spent)} spent.` : "Highest-impact swaps."} Based on EDHREC, your weak points and combos.</p>` +
@@ -510,7 +585,8 @@ function renderReport(rep){
   h += `<h3 class="sec">How to improve</h3><ul class="plain">${(A.suggestions.length ? A.suggestions : ["Run more rounds for a clearer picture."]).map(s => `<li>${esc(s)}</li>`).join("")}</ul>`;
   if (A.add_candidates && A.add_candidates.length) h += `<h4>Popular in the opponent decks</h4>` + list(["Card", {t:"Decks", r:1}, {t:"Price", r:1}],
     A.add_candidates.slice(0, 8).map(c => `<tr><td>${esc(c.card)}${c.fits_need ? ' <span class="good">★</span>' : ""}</td><td class="r">${c.in_decks}</td><td class="r">${eur(c.price)}</td></tr>`));
-  if (A.cut_candidates && A.cut_candidates.length) h += `<p class="note">Never cast during testing: ${A.cut_candidates.map(c => esc(c.card)).join(", ")}</p>`;
+  if (A.cut_candidates && A.cut_candidates.length) h += `<p class="note">Never cast in ${A.games_played} games: ${A.cut_candidates.map(c => esc(c.card)).join(", ")}</p>`;
+  else if (A.min_games_never_cast) h += `<p class="note">“Never cast” cards are listed from ${A.min_games_never_cast} games of your deck on (this run: ${A.games_played}); with fewer games, those cards were often just never drawn.</p>`;
 
   const E = rep.edhrec;
   if (E) {
@@ -555,7 +631,8 @@ function renderReport(rep){
     if (f != null && Math.abs(y - f) > .05 * Math.max(1, Math.abs(f))) cls = (y > f) === hi ? "good" : "bad";
     if (k === "survived") { y = Math.round(y * 100) + "%"; f = f == null ? "–" : Math.round(f * 100) + "%"; }
     const subRow = lab.startsWith("  ");
-    return `<tr><td${subRow ? ' class="dim" style="padding-left:28px"' : ""}>${lab.trim()}</td><td class="r ${cls}"><b>${y}</b></td><td class="r">${f ?? "–"}</td></tr>`; }));
+    const mark = cls === "good" ? ' <span aria-label="better">✓</span>' : cls === "bad" ? ' <span aria-label="worse">✗</span>' : "";
+    return `<tr><td${subRow ? ' class="dim" style="padding-left:28px"' : ""}>${lab.trim()}</td><td class="r ${cls}"><b>${y}</b>${mark}</td><td class="r">${f ?? "–"}</td></tr>`; }));
   if (!R.fast_mode) h += `<h3 class="sec">Standings</h3>` + list(["#", "Deck", {t:"Points", r:1}, "Pod finishes"], R.standings.map(s =>
     `<tr class="${s.id === "D01" ? "me" : ""}"><td>${s.rank}</td><td>${esc(s.name)}${s.id === "D01" ? " (you)" : ""}</td><td class="r">${s.points}</td><td>${s.places.join(" ")}</td></tr>`));
   h += `<h3 class="sec">Opponents</h3>` + list(["Deck", "Commander", "Colours", {t:"Value", r:1}], Object.entries(R.decks).filter(([k]) => k !== "D01").map(([k, d]) =>
@@ -563,7 +640,7 @@ function renderReport(rep){
 
   const EG = A.early_game;
   if (EG && EG.n) {
-    const play = c => c == null ? '<span class="dim">didn’t get this turn</span>' : (c.length ? `<span class="good">Yes</span> · ${esc(c.join(", "))}` : '<span class="bad">No</span>');
+    const play = c => c == null ? '<span class="dim">didn’t get this turn</span>' : (c.length ? `<span class="good">✓ Yes</span> · ${esc(c.join(", "))}` : '<span class="bad">✗ No</span>');
     h += `<h3 class="sec">Opening hands and early plays</h3><p class="sec-sub">Non-land play on your turn 1 in ${EG.t1_play} of ${EG.t1_games} games, on turn 2 in ${EG.t2_play} of ${EG.t2_games}. Average kept hand: ${EG.avg_kept} cards${EG.avg_lands_in_hand != null ? `, ${EG.avg_lands_in_hand} lands` : ""}.</p>` +
       list(["Round", "Kept opening hand", "Turn 1", "Turn 2"], EG.games.map(r => `<tr><td>${r.round}</td><td>${r.hand ? esc(r.hand_text) + `<div class="dim">${r.kept} cards, ${r.lands_in_hand} lands${r.mulligans ? `, ${r.mulligans} mulligan${r.mulligans > 1 ? "s" : ""}` : ""}</div>` : `<span class="dim">not recorded</span>`}</td><td>${play(r.t1)}</td><td>${play(r.t2)}</td></tr>`));
   }

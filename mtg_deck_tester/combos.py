@@ -37,7 +37,7 @@ def _combo_view(c, stats=None):
             "speed": stats}
 
 
-def analyze(user_deck, opponents, card_db, bracket, spellbook, log=print, n_user=6000):
+def analyze(user_deck, opponents, card_db, bracket, spellbook, log=print, n_user=6000, focus=()):
     out = {"available": True, "error": "", "included": [], "almost": [], "over_bracket": [],
            "goldfish": None, "interaction": {}, "field": {}}
     sb_ok = spellbook is not None
@@ -63,7 +63,7 @@ def analyze(user_deck, opponents, card_db, bracket, spellbook, log=print, n_user
     sim_combos = [c for c in included if {norm(p["name"]) for p in c["pieces"]} <= deck_names][:MAX_SIM_COMBOS]
     log(f"  {len(included)} combo(s) found, {sum(1 for c in included if c['wins'])} of them game-winning. "
         "Goldfishing your deck...")
-    gf = Goldfish(user_deck, card_db, sim_combos).run(
+    gf = Goldfish(user_deck, card_db, sim_combos, focus=focus).run(
         n_user, seed=1, win_combo_idx=[i for i, c in enumerate(sim_combos) if c["wins"]])
     out["goldfish"] = gf
     sim_map = {id(c): st for c, st in zip(sim_combos, gf["combo_each"])}
@@ -131,6 +131,28 @@ def forge_crosscheck(combo_data, results, user_deck, card_db):
                 won += 1 if p["place"] == 1 else 0
                 break
     return {"games": len(games), "assembled": assembled, "won": won}
+
+
+def explain_commander_timing(ana, cd):
+    """Forge's AI often holds its commander back. If the goldfish shows the deck can cast it on time,
+    say so instead of telling the player to change the deck."""
+    gf = (cd or {}).get("goldfish") or {}
+    m = (ana.get("metrics") or {}).get("commander_turn") or {}
+    if not gf or m.get("you") is None:
+        return
+    for w in ana["weak_points"]:
+        if w["title"] != "Commander arrives late":
+            continue
+        if gf.get("cmd_on_curve", 0) >= 50:
+            w["title"] = "Commander arrives late in Forge"
+            w["detail"] = (f"In the Forge games your commander came down on turn {m['you']} on average "
+                           f"(other decks: {m.get('field')}). Played on purpose, your deck casts it on curve in "
+                           f"{gf['cmd_on_curve']}% of games (average turn {gf.get('cmd_avg_turn', '?')}), so this is "
+                           "mostly Forge's AI choosing other spells first, not a problem with the deck.")
+            ana["suggestions"] = [s for s in ana["suggestions"] if not s.startswith("Prioritise ramp on turns 1–3")]
+        else:
+            w["detail"] += (f" Even played on purpose, it's cast on curve in only {gf.get('cmd_on_curve')}% of "
+                            f"goldfish games, so more early ramp would help.")
 
 
 def weak_points(cd, bracket):

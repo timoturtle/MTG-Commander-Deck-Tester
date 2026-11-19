@@ -39,6 +39,12 @@ def to_markdown(rep):
                 ", ".join(f"{c['card']} ({c['in_decks']})" for c in a["add_candidates"])]
     def eur(v):
         return "–" if v is None else f"€{v:,.2f}"
+    if rep.get("focus"):
+        out += ["", "## Focus cards", ""]
+        for f in rep["focus"]:
+            out.append(f"### {f['card']}")
+            out += [f"- {'✓' if o['sign'] == '+' else '✗' if o['sign'] == '−' else '•'} {o['text']}" for o in f["observations"]]
+            out.append("")
     U = rep.get("upgrades") or {}
     if U.get("swaps"):
         out += ["", "## Recommended upgrades", "",

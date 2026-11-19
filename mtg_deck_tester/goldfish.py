@@ -145,7 +145,7 @@ def _win_traits(c, info, o):
 
 
 class Goldfish:
-    def __init__(self, deck, card_db, combos=()):
+    def __init__(self, deck, card_db, combos=(), focus=()):
         self.cards = []
         for q, n in deck.cards:
             m = model(n, card_db.get(n) if card_db else None)
@@ -171,6 +171,14 @@ class Goldfish:
                 needs_bf.append("B" in (p.get("zones") or ["B"]))
             if ok and reqs:
                 self.combos.append({"reqs": reqs, "bf": needs_bf, "extra": combo.get("mana_value_needed", 0)})
+        # focus cards: card indices (or the commander) to follow
+        self.focus = {}
+        for f in focus:
+            k = norm(f)
+            if k in cmd_keys:
+                self.focus[f] = ("cmd", cmd_keys[k])
+            elif k in index:
+                self.focus[f] = ("lib", frozenset(index[k]))
         # pieces used from hand (instants, sorceries...) are held until the combo turn
         self.hold = set()
         for combo in self.combos:
@@ -220,6 +228,17 @@ class Goldfish:
                "lands_seen": 0}
         seen = 7
         lands_seen = kept_lands
+        now = [0]
+        f_seen, f_cast = {}, {}
+        for fname, (kind, ref) in self.focus.items():
+            if kind == "cmd" or hand & ref:
+                f_seen[fname] = 0  # commander or in the opening hand
+        res["f_seen"], res["f_cast"] = f_seen, f_cast
+
+        def note_seen(i):
+            for fname, (kind, ref) in self.focus.items():
+                if kind == "lib" and i in ref and fname not in f_seen:
+                    f_seen[fname] = now[0]
 
         def draw(n):
             nonlocal seen, lands_seen
@@ -227,6 +246,7 @@ class Goldfish:
                 if library:
                     i = library.pop(0)
                     hand.add(i)
+                    note_seen(i)
                     seen += 1
                     if seen <= 13 and C[i].land:
                         lands_seen += 1
@@ -256,6 +276,7 @@ class Goldfish:
             return best or []
 
         for t in range(1, KILL_TURN + 1):
+            now[0] = t
             draw(1 + engines)
             # land drop (untapped first)
             lands_in_hand = [i for i in hand if C[i].land]
@@ -318,10 +339,16 @@ class Goldfish:
                     cmd_cast[ci] = True
                     if res["cmd_turn"] is None:
                         res["cmd_turn"] = t
+                    for fname, (kind, ref) in self.focus.items():
+                        if kind == "cmd" and ref == ci and fname not in f_cast:
+                            f_cast[fname] = t
                     c = self.cmds[ci]
                 else:
                     c = C[pick]
                     hand.discard(pick)
+                    for fname, (kind, ref) in self.focus.items():
+                        if kind == "lib" and pick in ref and fname not in f_cast:
+                            f_cast[fname] = t
                     mana -= c.cmc
                     if c.types & {"creature", "artifact", "enchantment", "planeswalker", "battle"} or \
                             not c.types or pick in want_ids:
@@ -354,6 +381,7 @@ class Goldfish:
                             library.insert(0, target)
                         else:
                             hand.add(target)
+                            note_seen(target)
                 if c.draw:
                     draw(c.draw)
                 if c.engine:
@@ -454,12 +482,22 @@ class Goldfish:
             "flood": pct(sum(1 for g in games if g["lands_seen"] >= 8)),
             "cmd_on_curve": pct(sum(1 for g in games if g["cmd_turn"] is not None and g["cmd_turn"] <= max(1, cmd_cmc))),
             "cmd_by_t4": pct(sum(1 for g in games if g["cmd_turn"] is not None and g["cmd_turn"] <= 4)),
+            "cmd_avg_turn": round(sum(g["cmd_turn"] for g in games if g["cmd_turn"]) /
+                                  max(1, sum(1 for g in games if g["cmd_turn"])), 1),
             "avg_mana_t4": round(sum(g["mana"].get(4, 0) for g in games) / n, 1),
             "avg_mana_t6": round(sum(g["mana"].get(6, 0) for g in games) / n, 1),
             "combo_any": by_turn(any_turn) if self.combos else None,
             "combo_each": combo_stats,
             "simulated_combos": len(self.combos),
             "win": win,
+            "focus": {f: {"seen_opening": pct(sum(1 for g in games if g["f_seen"].get(f) == 0)),
+                          "seen_by_t4": pct(sum(1 for g in games if g["f_seen"].get(f, 99) <= 4)),
+                          "seen_by_t8": pct(sum(1 for g in games if g["f_seen"].get(f, 99) <= 8)),
+                          "cast_by_t8": pct(sum(1 for g in games if g["f_cast"].get(f, 99) <= 8)),
+                          "avg_cast_turn": round(sum(g["f_cast"][f] for g in games if f in g["f_cast"]) /
+                                                 max(1, sum(1 for g in games if f in g["f_cast"])), 1)
+                          if any(f in g["f_cast"] for g in games) else None}
+                      for f in self.focus},
             "win_any": kill_by_turn([min([x for x in [g["kill"]] + [g["combo"][k] for k in win_combo_idx]
                                          if x is not None], default=None) for g in games]),
         }

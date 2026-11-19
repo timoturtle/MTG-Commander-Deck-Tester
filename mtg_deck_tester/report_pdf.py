@@ -23,8 +23,13 @@ TERTIARY = colors.HexColor("#AEAEB2")
 SEPARATOR = colors.HexColor("#E5E5EA")
 GROUPED = colors.HexColor("#F2F2F7")
 BLUE = colors.HexColor("#007AFF")
-GREEN = colors.HexColor("#248A3D")
-RED = colors.HexColor("#D70015")
+# good / bad colours per palette (the colour-blind palettes avoid red-green)
+PALETTES = {"standard": ("#248A3D", "#D70015", "#FDEDEE"),
+            "blue-orange": ("#0062B8", "#C24A00", "#FCEFE6"),
+            "red-blue": ("#0062B8", "#D70015", "#FDEDEE")}
+GOOD_HEX, BAD_HEX, BAD_TINT_HEX = PALETTES["standard"]
+GREEN = colors.HexColor(GOOD_HEX)
+RED = colors.HexColor(BAD_HEX)
 ORANGE = colors.HexColor("#C93400")
 RED_TINT = colors.HexColor("#FDEDEE")
 BLUE_TINT = colors.HexColor("#E8F2FF")
@@ -277,10 +282,17 @@ def _short(text, limit):
     return text if len(text) <= limit else text[:limit - 1].rstrip(" ,;") + "…"
 
 
-def build_pdf(rep, path):
+def set_palette(name):
+    global GOOD_HEX, BAD_HEX, BAD_TINT_HEX, GREEN, RED, RED_TINT
+    GOOD_HEX, BAD_HEX, BAD_TINT_HEX = PALETTES.get(name or "standard", PALETTES["standard"])
+    GREEN, RED, RED_TINT = colors.HexColor(GOOD_HEX), colors.HexColor(BAD_HEX), colors.HexColor(BAD_TINT_HEX)
+
+
+def build_pdf(rep, path, palette="standard"):
     """Builds the PDF. If some content is too large for a page, it retries with the key-moments
     appendix shortened, then without it, so a report is always produced."""
     from reportlab.platypus.doctemplate import LayoutError
+    set_palette(palette)
     last = None
     for mode in ("full", "compact", "no_moments"):
         try:
@@ -376,6 +388,9 @@ def _build_pdf(rep, path, moments_mode="full"):
         story.append(Paragraph("Strengths", S["h3"]))
         story += [Paragraph(t(s), S["bullet"], bulletText="•") for s in A["strengths"]]
 
+    # ---------------- focus cards
+    story += _focus_section(rep, names, S, W)
+
     # ---------------- upgrades for the budget
     U = rep.get("upgrades") or {}
     if U.get("swaps"):
@@ -402,15 +417,22 @@ def _build_pdf(rep, path, moments_mode="full"):
                                                                      ["Run more rounds for a clearer picture."])]
     cuts = A.get("cut_candidates") or []
     adds = A.get("add_candidates") or []
-    if cuts or adds:
+    if True:
         def col(title, note, items, w):
             rows = [[Paragraph(t(a), S["cell"]), Paragraph(t(b), S["cellr"])] for a, b in items] or \
                 [[Paragraph("–", S["cell"]), ""]]
             return [Paragraph(t(title), S["h3"]), Paragraph(t(note), S["footnote"]), Spacer(1, 3),
                     _list(rows, [w * 0.7, w * 0.3], S)]
         w = (W - 10) / 2
-        left = col("Cards to reconsider", "Never cast during testing",
-                   [(c["card"], f"MV {c['cmc']:g}" if c.get("cmc") is not None else "") for c in cuts], w)
+        need = A.get("min_games_never_cast", 10)
+        if cuts:
+            left = col("Cards to reconsider", f"Never cast in {A.get('games_played')} games",
+                       [(c["card"], f"MV {c['cmc']:g}" if c.get("cmc") is not None else "") for c in cuts], w)
+        else:
+            left = [Paragraph("Cards to reconsider", S["h3"]),
+                    Paragraph(t(f"Shown from {need} games of your deck on (this run: {A.get('games_played')}). "
+                                "With fewer games, a card that was never cast was often just never drawn. "
+                                "Use more rounds to see this list."), S["footnote"])]
         right = col("Popular in the opponent decks", "Not in your deck · price · ★ fits a weak point",
                     [(c["card"] + (" ★" if c.get("fits_need") else ""), eur(c.get("price"))) for c in adds[:10]], w)
         tb = Table([[left, "", right]], colWidths=[w, 10, w])
@@ -461,15 +483,16 @@ def _build_pdf(rep, path, moments_mode="full"):
         y, f = m.get("you"), m.get("field")
         if y is None:
             continue
-        col = LABEL
+        col, mark = LABEL, ""
         if f is not None and abs(y - f) > 0.05 * max(1, abs(f)):
             col = GREEN if (y > f) == higher else RED
+            mark = " ✓" if col is GREEN else " ✗"
         ys, fs = (f"{round(y * 100)}%", "–" if f is None else f"{round(f * 100)}%") if k == "survived" else \
             (f"{y:g}", "–" if f is None else f"{f:g}")
         sub_row = label.startswith("   ")
         rows.append([Paragraph(("&nbsp;&nbsp;&nbsp;&nbsp;" if sub_row else "") + t(label.strip()),
                                S["cellsec"] if sub_row else S["cell"]),
-                     Paragraph(f"<b>{ys}</b>", ParagraphStyle("y", parent=S["cellr"], textColor=col)),
+                     Paragraph(f"<b>{ys}</b>{mark}", ParagraphStyle("y", parent=S["cellr"], textColor=col)),
                      Paragraph(fs, S["cellr"])])
     _section(story, "You vs. the field", S)
     story.append(_list(rows, [W * 0.6, W * 0.2, W * 0.2], S,
@@ -617,6 +640,80 @@ def _combo_section(CD, rep, S, W):
     return out
 
 
+def _focus_section(rep, names, S, W):
+    cards = rep.get("focus") or []
+    if not cards and not rep.get("focus_missing"):
+        return []
+    out = []
+    _section(out, "Focus cards", S, "What happened with the cards you asked about, in the Forge games and when "
+                                    "the deck plays on purpose (goldfish).")
+    if rep.get("focus_missing"):
+        out.append(Paragraph(t("Not in your deck, so not followed: " + ", ".join(rep["focus_missing"])), S["footnote"]))
+    # bullet marks: plain characters with their own colour (bullets can't contain markup)
+    sym = {}
+    for sign, ch, col in (("+", "✓", GOOD_HEX), ("−", "✗", BAD_HEX), ("·", "•", "#6E6E73")):
+        sym[sign] = (ch, ParagraphStyle("b" + sign, parent=S["bullet"], bulletFontName=_fonts()[1],
+                                        bulletColor=colors.HexColor(col)))
+    for f in cards:
+        block = [Paragraph(t(f["card"]) + (' <font size="9" color="#6E6E73">commander</font>' if f["commander"] else ""),
+                           ParagraphStyle("fc", parent=S["h3"], fontSize=12.5, leading=16, spaceBefore=12))]
+        meta = [f"MV {f['cmc']:g}" if f.get("cmc") is not None else None, ", ".join(f["roles"]) or None,
+                eur(f["price"]) if f.get("price") is not None else None,
+                f"{f['edhrec']:.0f}% on EDHREC" if f.get("edhrec") is not None else None]
+        block.append(Paragraph(t("  ·  ".join(m for m in meta if m)), S["secondary"]))
+        block.append(Spacer(1, 4))
+        n = f["games"]
+        g = f.get("goldfish") or {}
+        pairs = [("Cast in", f"{f['cast_games']} of {n} games ({f['casts']} cast{'s' if f['casts'] != 1 else ''})")]
+        if f.get("avg_first_turn"):
+            pairs.append(("First cast, your turn (average)", f"{f['avg_first_turn']:g}"))
+        if f.get("opening_known"):
+            pairs.append(("In the opening hand", f"{f['opening_hand']} of {f['opening_known']} games"))
+        dm = f["damage"]
+        if dm["combat"] + dm["noncombat"]:
+            pairs.append(("Damage dealt to opponents", f"{dm['combat'] + dm['noncombat']} ({dm['noncombat']} non-combat)"))
+        if f["kills"]:
+            pairs.append(("Opponents finished off", str(f["kills"])))
+        if f.get("avg_place_cast") is not None and f.get("avg_place_not") is not None:
+            pairs.append(("Average place: cast / not cast", f"{f['avg_place_cast']:g} / {f['avg_place_not']:g}"))
+        if g:
+            pairs.append(("Goldfish: drawn by turn 4 / 8", f"{g.get('seen_by_t4')}% / {g.get('seen_by_t8')}%"))
+            if not f["commander"]:
+                pairs.append(("Goldfish: cast by turn 8 (average turn)",
+                              f"{g.get('cast_by_t8')}% ({g.get('avg_cast_turn') or '–'})"))
+        block.append(_facts(pairs, S, W))
+        block.append(Spacer(1, 4))
+        for o in f["observations"]:
+            ch, st = sym.get(o["sign"], sym["·"])
+            block.append(Paragraph(t(o["text"]), st, bulletText=ch))
+        for c in f.get("combos", [])[:3]:
+            block.append(Paragraph(f'<font color="#6E6E73">Combo:</font> <link href="{escape(c["url"])}" color="#007AFF">'
+                                   f'{t(" + ".join(c["pieces"]))}</link> <font color="#6E6E73">– {t(", ".join(c["produces"]))}</font>',
+                                   S["secondary"]))
+        rows = []
+        for r in f["per_game"]:
+            casts = ", ".join(f"T{c['turn']}" + ("" if c.get("own_turn", True) else "*") for c in r["casts"]) or "–"
+            hand = "–" if r["in_opening_hand"] is None else ("✓" if r["in_opening_hand"] else "")
+            d = r["damage"]["combat"] + r["damage"]["noncombat"]
+            rows.append([Paragraph(str(r["round"]), S["cellc"]), Badges([r["place"]]), Paragraph(hand, S["cellc"]),
+                         Paragraph(t(casts), S["cell"]), Paragraph(str(d) if d else "–", S["cellr"]),
+                         Paragraph(t(", ".join(r["kills"])) or "–", S["cellsec"])])
+        if rows:
+            block.append(Spacer(1, 5))
+            block.append(_list(rows, [W * 0.09, W * 0.07, W * 0.13, W * 0.25, W * 0.12, W * 0.34], S,
+                               header=[Paragraph("Round", S["th"]), Paragraph("", S["th"]),
+                                       Paragraph("Opening hand", S["th"]), Paragraph("Cast on turn", S["th"]),
+                                       Paragraph("Damage", S["thr"]), Paragraph("Finished off", S["th"])]))
+        out.append(KeepTogether(block))
+    small = any(f["small_sample"] for f in cards)
+    out.append(Spacer(1, 4))
+    out.append(Paragraph(t("Turns are your own turns; * = cast during an opponent’s turn. "
+                           + ("Small sample: with fewer than 10 games, a card may look weak just because it wasn’t "
+                              "drawn – the goldfish numbers show how often it shows up." if small else "")),
+                         S["footnote"]))
+    return out
+
+
 def _early_section(E, S, W):
     if not E or not E.get("n"):
         return []
@@ -636,8 +733,8 @@ def _early_section(E, S, W):
         if c is None:
             return Paragraph("didn’t get this turn", S["cellsec"])
         if not c:
-            return Paragraph('<font color="#D70015"><b>No</b></font>', S["cell"])
-        return Paragraph(f'<font color="#248A3D"><b>Yes</b></font> · {t(", ".join(c))}', S["cell"])
+            return Paragraph(f'<font color="{BAD_HEX}"><b>✗ No</b></font>', S["cell"])
+        return Paragraph(f'<font color="{GOOD_HEX}"><b>✓ Yes</b></font> · {t(", ".join(c))}', S["cell"])
     rows = []
     for r in E["games"]:
         if r["hand"]:

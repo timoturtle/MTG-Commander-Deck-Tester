@@ -4,6 +4,32 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [3.3.0] - 2026-11-19
+
+### Added
+- Focus cards: name up to 10 cards you're unsure about and the report shows, for each, how often it
+  was drawn and cast, on which turns, the damage it dealt, opponents it finished off, how games went
+  with and without it, goldfish draw/cast rates, combos, EDHREC popularity and price, plus a
+  game-by-game table. Claude's coaching notes give a keep / cut / test-more recommendation.
+
+### Changed
+- Opponents are now truly random: no colour-identity balancing and no commander rules. The app
+  samples random pages from ~2,000 public decks and picks among them uniformly. Bracket, deck value
+  matching and avoiding decks from your last 3 runs stay.
+
+## [3.2.0] - 2026-11-19
+
+### Added
+- Settings → Appearance: theme (System, Light, Dark) and colour-blind friendly good/bad colours
+  (Blue/orange, Blue/red) for the app and the PDF. Good and bad values are also marked ✓ and ✗.
+
+### Changed
+- "Never cast in testing" is only used, for the cards-to-reconsider list and for cut suggestions,
+  once your deck has played at least 10 games; with fewer games it mostly means "never drawn".
+- "Commander arrives late": when the goldfish shows the deck can cast its commander on curve, the
+  report explains that the late casts are Forge's AI holding it back, and no longer suggests changes.
+- Basic lands are no longer suggested (e.g. in the EDHREC comparison).
+
 ## [3.1.1] - 2026-11-19
 
 ### Fixed

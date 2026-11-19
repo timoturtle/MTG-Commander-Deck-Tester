@@ -8,7 +8,7 @@ Each possible addition gets an impact score from what's known about it:
 Cuts come from cards you never cast in testing and cards rarely played with your commander.
 Within the budget, the highest-impact additions that still fit the remaining money are picked.
 """
-from .analysis import classify
+from .analysis import MIN_GAMES_NEVER_CAST, classify, is_basic
 
 ROLE_FOR_WEAKNESS = {
     "Slow mana development": "ramp", "Light on ramp pieces": "ramp", "Commander arrives late": "ramp",
@@ -31,7 +31,7 @@ def recommend(deck, profile, card_db, bracket, weak_titles, analysis, combo_data
     cand = {}
 
     def add(name, score, why):
-        if name.lower() in have:
+        if name.lower() in have or is_basic(name):
             return
         c = cand.setdefault(name, {"card": name, "score": 0.0, "why": []})
         c["score"] += score
@@ -96,7 +96,7 @@ def recommend(deck, profile, card_db, bracket, weak_titles, analysis, combo_data
             continue
         score, why = 0.0, []
         r = perf.get(name.lower())
-        if r and games >= 3 and r["cast_games"] == 0:
+        if r and games >= MIN_GAMES_NEVER_CAST and r["cast_games"] == 0:
             score += 0.4
             why.append("never cast in testing")
         e = edh_cards.get(name) or edh_cards.get(info["name"])
@@ -140,11 +140,13 @@ def edhrec_view(deck, card_db, edh):
     cards = edh["cards"]
     have = {n.lower() for n in deck.all_names()}
     try:
-        card_db.cheapest([n for n, e in cards.items() if (e.get("inclusion") or 0) >= 30 and n.lower() not in have], 0.3)
+        card_db.cheapest([n for n, e in cards.items()
+                          if (e.get("inclusion") or 0) >= 30 and n.lower() not in have and not is_basic(n)], 0.3)
     except Exception:
         pass
     missing = [{"card": n, "inclusion": e["inclusion"], "synergy": e.get("synergy"), "price": card_db.price(n)}
-               for n, e in cards.items() if n.lower() not in have and (e.get("inclusion") or 0) >= 30]
+               for n, e in cards.items()
+               if n.lower() not in have and not is_basic(n) and (e.get("inclusion") or 0) >= 30]
     missing.sort(key=lambda m: -(m["inclusion"] or 0))
     unusual = []
     for q, n in deck.cards:

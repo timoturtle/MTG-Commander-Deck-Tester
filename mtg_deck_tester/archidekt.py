@@ -59,18 +59,18 @@ class Archidekt:
                 break
         return out
 
-    def search(self, commanders, bracket, pages=4, deepest_page=12):
-        """Popular Commander decks as Candidates: the most-viewed page plus random pages further down
-        the most-viewed list (up to ~600 decks deep), so each run sees a different selection."""
-        page_list = [1] + sorted(random.sample(range(2, deepest_page + 1), pages - 1))
+    def search(self, commanders, bracket, pages=5, deepest_page=40):
+        """Random public Commander decks as Candidates: random pages from the first ~2,000 decks of
+        Archidekt's list (sorted by views, so abandoned or empty decks are rare). Commanders and
+        colours play no role, like sitting down at a random table."""
+        page_list = sorted(random.sample(range(1, deepest_page + 1), pages))
         base = {"deckFormat": COMMANDER_FORMAT, "orderBy": "-viewCount", "pageSize": 50}
         if bracket:
             base["edhBracket"] = bracket
         found, seen = [], set()
-        queries = [(True, dict(base, commanderName=c), [1, 2]) for c in commanders]
-        queries.append((False, base, page_list))
+        queries = [(False, base, page_list)]
         for from_cmd, params, n_pages in queries:
-            self.log("Searching Archidekt " + ("for your commander" if from_cmd else "for popular decks") + "...")
+            self.log("Searching Archidekt for random decks in your bracket...")
             for r in self._search(params, n_pages):
                 rid = r.get("id")
                 if rid is None or rid in seen:

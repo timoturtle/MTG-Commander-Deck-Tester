@@ -402,6 +402,11 @@ class PlayerStats:
     damage_taken_combat: int = 0
     damage_taken_noncombat: int = 0
     recasts: dict = field(default_factory=dict)  # card -> how often it was cast again, and how it came back
+    # per-card details (recorded for the focus deck only)
+    cast_log: list = field(default_factory=list)      # [{"card", "round", "turn"}] every cast, in order
+    card_damage: dict = field(default_factory=dict)   # card -> {"combat": n, "noncombat": n} to players
+    card_kills: list = field(default_factory=list)    # [{"card", "victim", "round"}] knock-outs credited to a card
+    lands_played: list = field(default_factory=list)  # land names played
     damage_taken_from: dict = field(default_factory=dict)  # deck id -> dmg
     life: int = 40
     elim_round: int | None = None
@@ -545,7 +550,10 @@ def parse_game(stdout, deck_ids, commanders_of, cards_of, focus="D01"):
                 d = pm.group(1)
                 t = cur_own_turn.get(d, 0)
                 P[d].lands_by_turn[t] = P[d].lands_by_turn.get(t, 0) + 1
-                owner_of_card[CARD_ID.sub("", msg.split(" played ", 1)[1].strip())] = d
+                land = CARD_ID.sub("", msg.split(" played ", 1)[1].strip())
+                owner_of_card[land] = d
+                if d == focus:
+                    P[d].lands_played.append(land)
         elif cap == "Add To Stack":
             c = CAST.match(msg)
             if c and c.group(1) in P:
@@ -561,6 +569,8 @@ def parse_game(stdout, deck_ids, commanders_of, cards_of, focus="D01"):
                 t = cur_own_turn.get(d, 0)
                 if current == d and t:
                     ps.casts_by_turn.setdefault(t, []).append(card)
+                if d == focus:
+                    ps.cast_log.append({"card": card, "round": rnd, "turn": t, "own_turn": current == d})
                 if ps.first_spell_turn is None:
                     ps.first_spell_turn = max(t, 1)
                 if ps.commander_turn is None and card in commanders_of.get(d, set()):
@@ -590,6 +600,10 @@ def parse_game(stdout, deck_ids, commanders_of, cards_of, focus="D01"):
                             timeline[-1]["dealt_" + kind] += amount
                     if src and src != victim and src in P:
                         killer_card[victim] = CARD_ID.sub("", dm.group(1).strip()) + ("" if combat else " (non-combat)")
+                    if src == focus and src != victim:
+                        cd0 = P[focus].card_damage.setdefault(CARD_ID.sub("", dm.group(1).strip()),
+                                                              {"combat": 0, "noncombat": 0})
+                        cd0["combat" if combat else "noncombat"] += amount
                         P[src].damage_dealt += amount
                         if combat:
                             P[src].damage_dealt_combat += amount
@@ -671,6 +685,13 @@ def parse_game(stdout, deck_ids, commanders_of, cards_of, focus="D01"):
             if "21 damage" in how and who and commanders_of.get(who):
                 by = f" by {sorted(commanders_of[who])[0]}"
                 how = "21 commander damage"
+            if who == focus and d != focus and d in killer_card and \
+                    any(k in how for k in ("life total", "poison")):
+                P[focus].card_kills.append({"card": killer_card[d].replace(" (non-combat)", ""), "victim": d,
+                                            "round": r})
+            elif who == focus and "21 damage" in ps.loss_reason:
+                P[focus].card_kills.append({"card": sorted(commanders_of.get(focus, {"your commander"}))[0],
+                                            "victim": d, "round": r})
             if d == focus:
                 txt = f"You were knocked out{by} ({how})"
             else:
