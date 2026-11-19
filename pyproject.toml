@@ -4,12 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mtg-commander-deck-tester"
-version = "2.3.0"
+version = "3.0.0"
 description = "Test Magic: The Gathering Commander decks in AI-played pod tournaments using Forge"
 readme = "README.md"
 requires-python = ">=3.9"
 license = "MIT"
-license-files = ["LICENSE"]
+license-files = ["LICENSE", "mtg_deck_tester/fonts/OFL.txt"]
 dependencies = [
     "reportlab>=4.0,<6",
     "certifi>=2024.2.2",
@@ -29,4 +29,4 @@ mtg-deck-tester = "mtg_deck_tester.app:main"
 packages = ["mtg_deck_tester"]
 
 [tool.setuptools.package-data]
-mtg_deck_tester = ["static/*", "java/*.java"]
+mtg_deck_tester = ["static/*", "java/*.java", "fonts/*"]

@@ -13,10 +13,10 @@ import urllib.parse
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import (APP_NAME, __version__, analysis, archidekt, combos, demo, forge, moxfield, opponents, report_md,
-               spellbook, tournament)
+from . import (APP_NAME, __version__, analysis, archidekt, budget, combos, demo, edhrec, forge, moxfield, opponents,
+               power, report_md, spellbook, tournament)
 from .decklist import parse_decklist
-from .scryfall import CardDB
+from .scryfall import CardDB, deck_value
 
 DEMO = os.environ.get("MTG_DEMO") == "1"
 HOME = os.path.expanduser(os.environ.get("MTG_HOME", os.path.join("~", APP_NAME)))
@@ -27,8 +27,9 @@ STATIC = os.path.join(os.path.dirname(__file__), "static")
 for _d in (HOME, CACHE, RESULTS):
     os.makedirs(_d, exist_ok=True)
 
-DEFAULT_SETTINGS = {"forge_folder": "", "api_key": "", "model": "claude-sonnet-5-5", "workers": 2,
-                    "clock": 600, "moxfield_user_agent": ""}
+DEFAULT_SETTINGS = {"forge_folder": "", "api_key": "", "model": "claude-sonnet-5-5", "workers": 0,
+                    "clock": 600, "max_turns": 60, "stall_turns": 16, "moxfield_user_agent": ""}
+AI_PROFILES = ["Default", "Cautious", "Reckless", "Experimental", "Hard", "Hardest"]
 FORGE_GUESSES = ["~/Forge", "~/forge", "~/Applications/Forge", "/Applications/Forge", "~/Downloads/forge*",
                  "~/Downloads/Forge*", "C:/Forge", "C:/Games/Forge", "~/Desktop/Forge*",
                  os.path.join(os.environ.get("ProgramFiles", "C:/Program Files"), "Forge")]
@@ -105,6 +106,11 @@ def write_reports(rep, workdir, log=print):
 
 
 def run_job(req):
+    with power.KeepAwake(log=JOB.say):
+        _run_job(req)
+
+
+def _run_job(req):
     job = JOB
     try:
         s = load_settings()
@@ -126,10 +132,19 @@ def run_job(req):
         est, why = analysis.estimate_bracket(prof)
         bracket = int(req.get("bracket") or 0) or est
         job.say(f"Bracket {bracket}" + ("" if req.get("bracket") else f" (estimated: {why})"))
+        my_value, unpriced = deck_value(deck, CARD_DB)
+        if not DEMO:
+            job.say(f"Your deck is worth about €{my_value:,.0f}" + (f" ({unpriced} cards without a price)" if unpriced else ""))
+        value_match = bool(req.get("value_match")) and my_value > 0 and not DEMO
+        if value_match:
+            job.say(f"Looking for opponents worth €{my_value * 0.7:,.0f}–€{my_value * 1.3:,.0f} (±30%).")
 
         need = int(req.get("field_size", 12)) - 1
         if DEMO:
             opps = demo.demo_opponents(need)
+            demo.demo_card_data(CARD_DB, [deck] + opps)
+            prof = analysis.deck_profile(deck, CARD_DB)
+            my_value = deck_value(deck, CARD_DB)[0]
             job.say(f"Demo mode: using {len(opps)} built-in opponents.")
         else:
             arch = archidekt.Archidekt(CACHE, log=job.say)
@@ -163,7 +178,7 @@ def run_job(req):
                 recent_runs = []
             recent = {k for run in recent_runs for k in run}
             opps = opponents.pick(sources, deck, prof["identity"], bracket, need, CARD_DB, job.say, manual,
-                                  recent=recent)
+                                  recent=recent, value_target=my_value if value_match else None)
             keys = [getattr(o, "_key", None) for o in opps if getattr(o, "_key", None)]
             try:
                 with open(recent_file, "w", encoding="utf-8") as f:
@@ -184,6 +199,8 @@ def run_job(req):
             CARD_DB.resolve({n for o in opps for n in o.all_names()})
             idents = sorted(opponents.identity_str(opponents._identity(o, CARD_DB)) for o in opps)
             job.say("Colour identities in the field: " + ", ".join(idents))
+        for o in opps:
+            o.value = deck_value(o, CARD_DB)[0] if not DEMO else round(my_value * (0.6 + 0.8 * (hash(o.name) % 100) / 100))
 
         # combos + goldfish (before the games, so you see results early in the log)
         sb = demo.DemoSpellbook() if DEMO else spellbook.Spellbook(CACHE, log=job.say)
@@ -214,13 +231,27 @@ def run_job(req):
             job.done, job.total = done, total
             job.say(msg)
 
+        workers = int(s.get("workers") or 0) or forge.auto_workers()
+        mull = req.get("mulligan") or {}
+        mull_spec = (f"{int(mull['min_lands'])},{int(mull['max_lands'])},{1 if mull.get('need_cheap') else 0},"
+                     f"{int(mull.get('max_mulligans', 2))}") if mull.get("enabled") else ""
         cfg = {"rounds": int(req.get("rounds", 5)), "fast": bool(req.get("fast")),
-               "workers": int(s.get("workers", 2)), "clock": int(s.get("clock", 600)),
+               "workers": workers, "clock": int(s.get("clock", 600)),
+               "max_turns": int(s.get("max_turns", 60)), "stall_turns": int(s.get("stall_turns", 16)),
+               "mulligan": mull_spec,
+               "ai_profile_you": req.get("ai_profile_you") if req.get("ai_profile_you") in AI_PROFILES else "",
+               "ai_profile_opp": req.get("ai_profile_opp") if req.get("ai_profile_opp") in AI_PROFILES else "",
                "strong_ai": bool(req.get("strong_ai")), "forge_folder": s["forge_folder"], "demo": DEMO,
                "cache_dir": CACHE}
-        job.say(f"Starting tournament: {len(opps) + 1} decks, {cfg['rounds']} rounds. "
+        job.say(f"Starting tournament: {len(opps) + 1} decks, {cfg['rounds']} rounds, {workers} game(s) at once. "
                 "Each Forge game takes a few minutes.")
-        res = tournament.run_tournament(deck, opps, cfg, CARD_DB, workdir, progress, job.cancel)
+        try:
+            res = tournament.run_tournament(deck, opps, cfg, CARD_DB, workdir, progress, job.cancel)
+        finally:
+            forge.ForgeSession.close_all()
+        res["decks"]["D01"]["value"] = my_value
+        for i, o in enumerate(opps, 2):
+            res["decks"][f"D{i:02d}"]["value"] = getattr(o, "value", None)
         if not res["games"]:
             raise RuntimeError("No games finished. " + (res["errors"][0] if res["errors"] else ""))
         for e in res["errors"]:
@@ -233,9 +264,33 @@ def run_job(req):
             cw, cs = combos.weak_points(combo_data, bracket)
             ana["weak_points"] += [{"title": t, "detail": d} for t, d in cw]
             ana["suggestions"] += [x for x in cs if x not in ana["suggestions"]]
+
+        # EDHREC comparison and priced upgrade suggestions
+        edh = None
+        if not DEMO:
+            job.say("Comparing with EDHREC decks for your commander...")
+            edh = edhrec.Edhrec(CACHE, log=job.say).commander_cards(deck.commanders)
+        else:
+            edh = demo.demo_edhrec(deck)
+        budget_eur = float(req.get("budget") or 0) or None
+        upgrades = budget.recommend(deck, prof, CARD_DB, bracket, [w["title"] for w in ana["weak_points"]], ana,
+                                    combo_data, edh, opps, budget_eur)
+        edh_view = budget.edhrec_view(deck, CARD_DB, edh)
+        edh_cards = (edh or {}).get("cards") or {}
+        for a in ana["add_candidates"]:
+            a["price"] = CARD_DB.price(a["card"])
+            a["edhrec"] = (edh_cards.get(a["card"]) or {}).get("inclusion")
+        if combo_data:
+            for a in combo_data.get("almost", []):
+                a["price"] = CARD_DB.price(a["missing"])
         rep = {"id": rid, "created": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
                "app_version": __version__, "deck": deck.to_dict(), "profile": prof, "bracket": bracket,
-               "results": res, "analysis": ana, "combos": combo_data, "ai_text": "", "ai_error": "", "demo": DEMO}
+               "results": res, "analysis": ana, "combos": combo_data, "upgrades": upgrades, "edhrec": edh_view,
+               "value": my_value, "value_match": value_match,
+               "settings_used": {"ai_profile_you": cfg["ai_profile_you"] or "Default",
+                                 "ai_profile_opp": cfg["ai_profile_opp"] or "Default",
+                                 "mulligan": mull if mull.get("enabled") else None, "workers": workers},
+               "ai_text": "", "ai_error": "", "demo": DEMO}
         if req.get("use_ai"):
             if not s.get("api_key"):
                 rep["ai_error"] = "No Claude API key saved in Settings."
@@ -243,7 +298,8 @@ def run_job(req):
                 job.say("Asking Claude for coaching notes...")
                 try:
                     rep["ai_text"] = analysis.ai_analysis(s["api_key"], s.get("model") or DEFAULT_SETTINGS["model"],
-                                                          deck, prof, ana, res, bracket, combo_data)
+                                                          deck, prof, ana, res, bracket, combo_data, upgrades,
+                                                          edh_view, budget_eur)
                 except Exception as e:
                     rep["ai_error"] = str(e)[:400]
                     job.say("AI analysis failed: " + rep["ai_error"])
@@ -313,7 +369,7 @@ class Handler(BaseHTTPRequestHandler):
             s = load_settings()
             s["api_key_set"] = bool(s.pop("api_key"))
             s["moxfield_set"] = bool(s.pop("moxfield_user_agent"))
-            s.update(demo=DEMO, version=__version__)
+            s.update(demo=DEMO, version=__version__, ai_profiles=AI_PROFILES, auto_workers=forge.auto_workers())
             return self._send(200, s)
         if path == "/api/status":
             return self._send(200, JOB.snapshot())
@@ -349,9 +405,9 @@ class Handler(BaseHTTPRequestHandler):
             for k in ("forge_folder", "model"):
                 if k in body:
                     s[k] = str(body[k]).strip().strip("'\"")
-            for k in ("workers", "clock"):
+            for k in ("workers", "clock", "max_turns", "stall_turns"):
                 if k in body:
-                    s[k] = max(1, int(body[k]))
+                    s[k] = max(0 if k == "workers" else 1, int(body[k]))
             for k in ("api_key", "moxfield_user_agent"):
                 if body.get(k):
                     s[k] = body[k].strip()
@@ -377,9 +433,10 @@ class Handler(BaseHTTPRequestHandler):
                     warns.append(f"Scryfall lookup failed: {e}")
             prof = analysis.deck_profile(deck, CARD_DB)
             est, why = analysis.estimate_bracket(prof)
+            value = deck_value(deck, CARD_DB)[0] if not DEMO and deck.size else None
             return self._send(200, {"commanders": deck.commanders, "size": deck.size, "warnings": warns,
                                     "unknown": missing, "profile": prof, "bracket_estimate": est,
-                                    "bracket_reason": why})
+                                    "bracket_reason": why, "value": value})
         if path == "/api/start":
             if JOB.state == "running":
                 return self._send(409, {"error": "A test is already running."})
@@ -387,6 +444,28 @@ class Handler(BaseHTTPRequestHandler):
             JOB.state = "running"
             threading.Thread(target=run_job, args=(body,), daemon=True).start()
             return self._send(200, {"ok": True})
+        if path == "/api/import":
+            url = (body.get("url") or "").strip()
+            try:
+                if "moxfield.com" in url:
+                    mox = moxfield.Moxfield(load_settings().get("moxfield_user_agent", ""), CACHE)
+                    if not mox.enabled:
+                        return self._send(400, {"error": "Moxfield links need a Moxfield User-Agent in Settings "
+                                                         "(Moxfield only allows automated access with permission). "
+                                                         "Copy the list from Moxfield instead."})
+                    d = mox.fetch(moxfield.deck_id_from_url(url), refresh=True)
+                elif "archidekt.com" in url:
+                    did = archidekt.deck_id_from_url(url)
+                    d = archidekt.Archidekt(CACHE).fetch(did, refresh=True) if did else None
+                else:
+                    return self._send(400, {"error": "Paste a link to a deck on archidekt.com or moxfield.com."})
+            except Exception as e:
+                return self._send(502, {"error": f"Could not load the deck: {e}. Is it public?"})
+            if not d:
+                return self._send(404, {"error": "Deck not found. Is it public?"})
+            lines = [f"1 {c} [Commander]" for c in d.commanders] + [f"{q} {n}" for q, n in d.cards]
+            return self._send(200, {"name": d.name, "text": "\n".join(lines), "commanders": d.commanders,
+                                    "size": d.size})
         if path == "/api/cancel":
             JOB.cancel.set()
             JOB.say("Stopping...")
@@ -410,6 +489,9 @@ def main():
     ap.add_argument("--no-browser", action="store_true")
     args = ap.parse_args()
     DEMO = DEMO or args.demo
+    if DEMO:
+        CARD_DB.resolve = lambda names: []
+        CARD_DB.save = lambda: None
     try:
         srv = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     except OSError:

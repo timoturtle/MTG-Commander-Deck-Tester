@@ -37,6 +37,20 @@ def to_markdown(rep):
     if a["add_candidates"]:
         out += ["", "**Popular in similar decks, not in yours:** " +
                 ", ".join(f"{c['card']} ({c['in_decks']})" for c in a["add_candidates"])]
+    def eur(v):
+        return "–" if v is None else f"€{v:,.2f}"
+    U = rep.get("upgrades") or {}
+    if U.get("swaps"):
+        out += ["", "## Recommended upgrades", "",
+                (f"Budget {eur(U['budget'])}, spent {eur(U['spent'])}." if U.get("budget") else "Highest-impact swaps."),
+                "", "| Add | Price | Why | Cut |", "|---|---|---|---|"]
+        out += [f"| {_c(s['add'])} | {eur(s['price'])} | {_c(s['why'])} | {_c(s['cut'])} |" for s in U["swaps"]]
+    E = rep.get("edhrec")
+    if E and E.get("missing"):
+        out += ["", "## Compared with EDHREC", "", "Popular cards you don't play: " +
+                ", ".join(f"{m['card']} ({m['inclusion']:.0f}%, {eur(m.get('price'))})" for m in E["missing"][:10])]
+        if E.get("unusual"):
+            out.append("Your unusual picks: " + ", ".join(u["card"] for u in E["unusual"][:10]))
     CD = rep.get("combos")
     if CD and CD.get("goldfish"):
         gf = CD["goldfish"]
@@ -47,6 +61,10 @@ def to_markdown(rep):
                 f"- Non-land play on turn 1 / 2: {gf['t1_play']}% / {gf['t2_play']}%",
                 f"- Commander on curve: {gf['cmd_on_curve']}%",
                 f"- Mana screw: {gf['screw']}% · flood: {gf['flood']}%"]
+        if gf.get("win_any"):
+            wa = gf["win_any"]
+            out.append(f"- Wins alone by turn 8 / 10 / 12: {wa['t8']}% / {wa['t10']}% / {wa['t12']}% "
+                       f"(typical: {('turn ' + str(wa['median'])) if wa['median'] else 'after turn 15'})")
         if gf.get("combo_any"):
             ca = gf["combo_any"]
             out.append(f"- Any combo by turn 4 / 6 / 8: {ca['t4']}% / {ca['t6']}% / {ca['t8']}% (typical: {med(ca['median'])})")

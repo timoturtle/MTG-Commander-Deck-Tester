@@ -1,5 +1,6 @@
 """Swiss-style Commander tournament in pods of four, played by Forge's AI."""
 import os
+import queue
 import random
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -67,6 +68,20 @@ def run_tournament(user_deck, opponents, cfg, card_db, workdir, progress, cancel
     opp_cycle = []
     lock = threading.Lock()
 
+    workers = max(1, cfg.get("workers", 1))
+    sessions = queue.Queue()
+    all_sessions = []
+    if helper_box[0]:
+        for _ in range(workers):
+            s = forge.ForgeSession(cfg["forge_folder"], helper_box[0], log_dir, log=lambda m: progress(done, total, m))
+            all_sessions.append(s)
+            sessions.put(s)
+    mull = cfg.get("mulligan")  # e.g. "3,5,1,2" or ""
+    prof_you, prof_opp = cfg.get("ai_profile_you", ""), cfg.get("ai_profile_opp", "")
+
+    def specs(seats):
+        return [f"{s}.dck|{prof_you if s == USER else prof_opp}|{mull if s == USER and mull else ''}" for s in seats]
+
     def play(rnd, pod_no, seats):
         if cancel_event.is_set():
             raise Cancelled()
@@ -75,24 +90,30 @@ def run_tournament(user_deck, opponents, cfg, card_db, workdir, progress, cancel
             out = demo.fake_game(seats, decks, strength)
             with open(log_path, "w", encoding="utf-8") as f:
                 f.write(out)
-        else:
-            files = [f"{s}.dck" for s in seats]
-            helper = helper_box[0]
+        elif helper_box[0]:
+            s = sessions.get()
             try:
-                out = forge.run_pod(cfg["forge_folder"], deck_dir, files, cfg["clock"], log_path, cancel_event,
-                                    cfg.get("strong_ai", False), helper_dir=helper)
+                out = s.play(deck_dir, specs(seats), log_path, cfg["clock"], cfg.get("max_turns", 60),
+                             cfg.get("stall_turns", 16), cfg.get("strong_ai", False), cancel_event)
             except Cancelled:
                 raise
-            except Exception:
-                if not helper:
+            except Exception as e:
+                if s.games <= 1 and "Forge:" not in str(e):
+                    # the helper doesn't work with this Forge version: fall back to plain sim mode
+                    helper_box[0] = None
+                    forge.disable_helper(jar)
+                    progress(done, total, "The Forge helper failed with this Forge version; "
+                                          "continuing in Forge's normal mode (no opening hands or mulligan rules).")
+                    out = forge.run_pod(cfg["forge_folder"], deck_dir, [f"{x}.dck" for x in seats], cfg["clock"],
+                                        log_path, cancel_event, cfg.get("strong_ai", False))
+                else:
                     raise
-                # the opening-hand helper failed with this Forge version: fall back to plain sim mode
-                helper_box[0] = None
-                forge.disable_helper(jar)
-                progress(done, total, "Opening-hand recorder failed with this Forge version; continuing without it.")
-                out = forge.run_pod(cfg["forge_folder"], deck_dir, files, cfg["clock"], log_path, cancel_event,
-                                    cfg.get("strong_ai", False))
-        return forge.parse_game(out, seats, cmd_sets, card_sets)
+            finally:
+                sessions.put(s)
+        else:
+            out = forge.run_pod(cfg["forge_folder"], deck_dir, [f"{x}.dck" for x in seats], cfg["clock"], log_path,
+                                cancel_event, cfg.get("strong_ai", False))
+        return forge.parse_game(out, seats, cmd_sets, card_sets, focus=USER)
 
     for rnd in range(1, rounds + 1):
         if cancel_event.is_set():
@@ -110,7 +131,7 @@ def run_tournament(user_deck, opponents, cfg, card_db, workdir, progress, cancel
             history.add(frozenset(p))
         progress(done, total, f"Round {rnd}: {len(pods)} pod(s) at the table")
 
-        with ThreadPoolExecutor(max_workers=max(1, cfg.get("workers", 1))) as ex:
+        with ThreadPoolExecutor(max_workers=workers) as ex:
             futs = {ex.submit(play, rnd, i + 1, p): (i + 1, p) for i, p in enumerate(pods)}
             for fut in as_completed(futs):
                 pod_no, seats = futs[fut]
@@ -131,6 +152,7 @@ def run_tournament(user_deck, opponents, cfg, card_db, workdir, progress, cancel
                         "round": rnd, "pod": pod_no, "seats": seats, "winner": res.winner,
                         "draw": res.draw, "table_rounds": res.rounds, "duration_ms": res.duration_ms,
                         "killers": res.killers,
+                        "timeline": res.timeline if USER in seats else [],
                         "players": {d: asdict(ps) for d, ps in res.players.items()},
                     })
                     done += 1
@@ -144,6 +166,9 @@ def run_tournament(user_deck, opponents, cfg, card_db, workdir, progress, cancel
                 progress(done, total, msg)
         if errors and len(errors) >= max(3, total // 2) and not games:
             raise RuntimeError("Forge failed repeatedly:\n" + "\n".join(errors[:3]))
+
+    for s in all_sessions:
+        s.close()
 
     # standings
     stand = []

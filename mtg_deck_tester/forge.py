@@ -4,13 +4,15 @@ import glob
 import os
 import re
 import shutil
+import queue
 import subprocess
 import sys
+import threading
 import time
 from dataclasses import dataclass, field
 
 JAVA_ARGS = [
-    "-Xmx4096m", "-Dio.netty.tryReflectionSetAccessible=true", "-Dfile.encoding=UTF-8",
+    "-Xmx3072m", "-Dio.netty.tryReflectionSetAccessible=true", "-Dfile.encoding=UTF-8",
     "-Dstdout.encoding=UTF-8", "-Dsun.stdout.encoding=UTF-8", "-Djava.awt.headless=true",
     "-Dapple.awt.UIElement=true",  # no Dock icon on macOS (ignored elsewhere)
 ]
@@ -187,13 +189,17 @@ def run_pod(forge_folder, deck_dir, deck_files, game_clock, out_path, cancel_eve
         if strong_ai:
             cmd += ["-mc", "on"]
     flags = 0x08000000 if os.name == "nt" else 0  # CREATE_NO_WINDOW on Windows
-    deadline = time.time() + game_clock + extra_timeout
+    budget = game_clock + extra_timeout  # seconds of awake time
     with open(out_path, "w", encoding="utf-8", errors="replace") as out, \
             open(out_path + ".err", "w", encoding="utf-8", errors="replace") as err:
         p = subprocess.Popen(cmd, cwd=os.path.dirname(jar), stdout=out, stderr=err,
                              stdin=subprocess.DEVNULL, creationflags=flags)
+        last = time.time()
         while p.poll() is None:
-            if (cancel_event is not None and cancel_event.is_set()) or time.time() > deadline:
+            now = time.time()
+            budget -= min(now - last, 5)  # a sleeping computer doesn't use up the time limit
+            last = now
+            if (cancel_event is not None and cancel_event.is_set()) or budget < 0:
                 p.kill()
                 p.wait()
                 if cancel_event is not None and cancel_event.is_set():
@@ -212,6 +218,139 @@ def run_pod(forge_folder, deck_dir, deck_files, game_clock, out_path, cancel_eve
     except OSError:
         pass
     return text
+
+
+class ForgeSession:
+    """One running Forge (HandSim helper) that plays many games, so Forge starts only once.
+    Restarted automatically after a crash and every RESTART_EVERY games."""
+    RESTART_EVERY = 12
+    _open = set()
+    _lock = threading.Lock()
+
+    @classmethod
+    def close_all(cls):
+        with cls._lock:
+            sessions = list(cls._open)
+        for s in sessions:
+            s.close()
+
+    def __init__(self, forge_folder, helper_dir, log_dir, log=print):
+        self.java = find_java()
+        self.jar = find_forge_jar(forge_folder)
+        self.helper_dir = helper_dir
+        self.log_dir = log_dir
+        self.log = log
+        self.proc = None
+        self.games = 0
+        self.lines = queue.Queue()
+
+    def _reader(self, proc):
+        for line in proc.stdout:
+            self.lines.put(line.rstrip("\n"))
+        self.lines.put(None)
+
+    def start(self, cancel_event=None):
+        cmd = [self.java] + JAVA_ARGS
+        for o in ADD_OPENS:
+            cmd += ["--add-opens", o + "=ALL-UNNAMED"]
+        cmd += ["-cp", self.jar + os.pathsep + self.helper_dir, "HandSim"]
+        err = open(os.path.join(self.log_dir, f"forge-session-{id(self)}.err"), "a", encoding="utf-8", errors="replace")
+        self.lines = queue.Queue()
+        self.proc = subprocess.Popen(cmd, cwd=os.path.dirname(self.jar), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                     stderr=err, text=True, encoding="utf-8", errors="replace", bufsize=1,
+                                     creationflags=0x08000000 if os.name == "nt" else 0)
+        threading.Thread(target=self._reader, args=(self.proc,), daemon=True).start()
+        with ForgeSession._lock:
+            ForgeSession._open.add(self)
+        self.games = 0
+        if self._wait_for(lambda l: l == "@@READY", 300, cancel_event) is None:
+            self.close()
+            raise RuntimeError("Forge did not start (see forge-session .err file in the logs folder).")
+
+    def _wait_for(self, match, budget, cancel_event):
+        last = time.time()
+        while budget > 0:
+            if cancel_event is not None and cancel_event.is_set():
+                self.close()
+                raise Cancelled()
+            try:
+                line = self.lines.get(timeout=1)
+            except queue.Empty:
+                line = ""
+            now = time.time()
+            budget -= min(now - last, 5)  # sleep doesn't count
+            last = now
+            if line is None:
+                return None  # process ended
+            if line and match(line):
+                return line
+        return None
+
+    def play(self, deck_dir, specs, out_path, clock, max_turns, stall_turns, strong_ai, cancel_event=None):
+        """specs: list of 'file.dck|Profile|minL,maxL,cheap,maxMull'. Returns the game log text."""
+        if self.proc is None or self.proc.poll() is not None or self.games >= self.RESTART_EVERY:
+            self.close()
+            self.start(cancel_event)
+        gid = f"g{self.games}"
+        self.games += 1
+        cmd = "\t".join(["GAME", gid, out_path, deck_dir, str(int(clock)), str(int(max_turns)), str(int(stall_turns)),
+                         "1" if strong_ai else "0"] + list(specs))
+        try:
+            self.proc.stdin.write(cmd + "\n")
+            self.proc.stdin.flush()
+        except OSError:
+            self.close()
+            raise RuntimeError("Forge stopped unexpectedly.")
+        line = self._wait_for(lambda l: l.startswith(("@@DONE " + gid, "@@ERROR " + gid)), clock + 240, cancel_event)
+        if line is None:
+            self.close()
+            raise RuntimeError("Forge took too long or stopped; it will be restarted for the next game.")
+        if line.startswith("@@ERROR"):
+            raise RuntimeError("Forge: " + line.split(" ", 2)[-1][:300])
+        with open(out_path, encoding="utf-8", errors="replace") as f:
+            return f.read()
+
+    def close(self):
+        with ForgeSession._lock:
+            ForgeSession._open.discard(self)
+        p, self.proc = self.proc, None
+        if p and p.poll() is None:
+            try:
+                p.stdin.write("QUIT\n")
+                p.stdin.flush()
+                p.wait(timeout=10)
+            except Exception:
+                p.kill()
+
+
+def auto_workers():
+    """How many Forge games to run at once: leave a core free, about 3 GB of memory per game."""
+    cores = os.cpu_count() or 2
+    mem_gb = None
+    try:
+        if sys.platform == "darwin":
+            mem_gb = int(subprocess.run(["sysctl", "-n", "hw.memsize"], capture_output=True, text=True,
+                                        timeout=5).stdout.strip()) / 2 ** 30
+        elif os.name == "nt":
+            import ctypes
+
+            class MS(ctypes.Structure):
+                _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
+                            ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong),
+                            ("ullTotalPageFile", ctypes.c_ulonglong), ("ullAvailPageFile", ctypes.c_ulonglong),
+                            ("ullTotalVirtual", ctypes.c_ulonglong), ("ullAvailVirtual", ctypes.c_ulonglong),
+                            ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
+            ms = MS()
+            ms.dwLength = ctypes.sizeof(MS)
+            ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(ms))
+            mem_gb = ms.ullTotalPhys / 2 ** 30
+        else:
+            with open("/proc/meminfo") as f:
+                mem_gb = int(f.readline().split()[1]) / 2 ** 20
+    except Exception:
+        pass
+    by_mem = int((mem_gb - 4) // 3) if mem_gb else 2
+    return max(1, min(cores - 1, by_mem, 6))
 
 
 # ----------------------------------------------------------------- log parsing
@@ -266,10 +405,12 @@ class GameResult:
     rounds: int            # table rounds (each player had a turn)
     duration_ms: int = 0
     killers: dict = field(default_factory=dict)  # deck id -> deck id most responsible
+    timeline: list = field(default_factory=list)  # key moments of the focus deck per table round
 
 
-def parse_game(stdout, deck_ids, commanders_of, cards_of):
-    """deck_ids: seat order list; commanders_of/cards_of: deck id -> set of card names."""
+def parse_game(stdout, deck_ids, commanders_of, cards_of, focus="D01"):
+    """deck_ids: seat order list; commanders_of/cards_of: deck id -> set of card names.
+    focus: the deck whose key moments are recorded round by round."""
     raw = [l.strip() for l in stdout.splitlines()]
     entries, hands = [], {}
     for l in raw:
@@ -292,10 +433,11 @@ def parse_game(stdout, deck_ids, commanders_of, cards_of):
     current, cur_own_turn = None, {}
     zero_idx, last_seen, last_damage_from = {}, {}, {}
     outcomes, last_table_turn = {}, 0
-    draw = "ended in a Draw" in stdout or "Stopping slow match as draw" in stdout
+    draw = ("ended in a Draw" in stdout or "Stopping slow match as draw" in stdout
+            or "Stopping stalled match as draw" in stdout)
     winner = None
     m = re.search(r"Ai\(\d+\)-(D\d\d) has won!", stdout)
-    if m:
+    if m and not draw:
         winner = m.group(1)
 
     def owner_for(card):
@@ -307,7 +449,40 @@ def parse_game(stdout, deck_ids, commanders_of, cards_of):
         owners = [d for d in deck_ids if card in cards_of.get(d, set())]
         return owners[0] if len(owners) == 1 else None
 
+    # key moments for the focus deck, one entry per table round
+    timeline, rnd, first_seat = [], 0, None
+    round_of_index = {}
+    killer_card = {}
+
+    def new_round():
+        timeline.append({"round": rnd, "cast": [], "lands": 0, "dealt": 0, "taken": 0, "events": [], "life": {}})
+
     for i, (cap, msg) in enumerate(entries):
+        round_of_index[i] = rnd
+        if cap == "Turn":
+            tm0 = TURN.match(msg)
+            pm0 = PLAYER.search(tm0.group(2)) if tm0 else None
+            if pm0:
+                if first_seat is None:
+                    first_seat = pm0.group(1)
+                if pm0.group(1) == first_seat:
+                    if timeline:
+                        timeline[-1]["life"] = {d: P[d].life for d in P}
+                    rnd += 1
+                    new_round()
+                    round_of_index[i] = rnd
+        T = timeline[-1] if timeline else None
+        if T is not None and focus in P:
+            if cap == "Land" and msg.startswith(f"Ai(") and PLAYER.match(msg) and PLAYER.match(msg).group(1) == focus \
+                    and " played " in msg:
+                T["lands"] += 1
+            elif cap == "Add To Stack":
+                c0 = CAST.match(msg)
+                if c0 and c0.group(1) == focus:
+                    card0 = CARD_ID.sub("", c0.group(2).strip())
+                    T["cast"].append(card0)
+                    if card0 in commanders_of.get(focus, set()):
+                        T["events"].append(f"You cast your commander {card0}")
         for d in PLAYER.findall(msg):
             if cap != "Game Outcome" and d in P:
                 last_seen[d] = i
@@ -365,7 +540,13 @@ def parse_game(stdout, deck_ids, commanders_of, cards_of):
                     src = src_player.group(1) if src_player and dm.group(1).startswith("Ai(") \
                         else owner_for(dm.group(1).strip())
                     P[victim].damage_taken += amount
+                    if timeline:
+                        if victim == focus:
+                            timeline[-1]["taken"] += amount
+                        elif src == focus:
+                            timeline[-1]["dealt"] += amount
                     if src and src != victim and src in P:
+                        killer_card[victim] = CARD_ID.sub("", dm.group(1).strip())
                         P[src].damage_dealt += amount
                         P[victim].damage_taken_from[src] = P[victim].damage_taken_from.get(src, 0) + amount
                         last_damage_from[victim] = src
@@ -388,7 +569,7 @@ def parse_game(stdout, deck_ids, commanders_of, cards_of):
     # who is out?
     for d, ps in P.items():
         o = outcomes.get(d, "")
-        if "has won" in o:
+        if "has won" in o and not draw:
             ps.won = True
             winner = winner or d
         elif "lost" in o or "conceded" in o:
@@ -427,7 +608,31 @@ def parse_game(stdout, deck_ids, commanders_of, cards_of):
             if not k and ps.damage_taken_from:
                 k = max(ps.damage_taken_from, key=ps.damage_taken_from.get)
             killers[d] = k
+    # finish the timeline: last life totals, knock-outs
+    if timeline:
+        timeline[-1]["life"] = {d: P[d].life for d in P}
+        for d, ps in P.items():
+            if not ps.eliminated:
+                continue
+            at = zero_idx.get(d, last_seen.get(d))
+            r = round_of_index.get(at, rnd) if at is not None else rnd
+            r = max(1, min(r, len(timeline)))
+            who = killers.get(d)
+            how = ps.loss_reason.replace("lost because ", "").replace("lost due to ", "")
+            by = f" by {killer_card[d]}" if d in killer_card and who and \
+                any(k in how for k in ("life total", "21 damage", "poison")) else ""
+            if d == focus:
+                txt = f"You were knocked out{by} ({how})"
+            else:
+                txt = f"{d} knocked out{by}"
+            timeline[r - 1]["events"].append({"text": txt, "deck": d, "killer": who})
+        if winner:
+            timeline[-1]["events"].append({"text": f"{winner} won", "deck": winner})
+    for T in timeline:
+        T["events"] = [e if isinstance(e, dict) else {"text": e} for e in T["events"]]
+
     dur = re.search(r"ended in (\d+) ms", stdout)
     rounds = max((p.own_turns for p in P.values()), default=0)
     return GameResult(players=P, seat_order=list(deck_ids), winner=winner, draw=draw and not winner,
-                      rounds=rounds, duration_ms=int(dur.group(1)) if dur else 0, killers=killers)
+                      rounds=rounds, duration_ms=int(dur.group(1)) if dur else 0, killers=killers,
+                      timeline=timeline)

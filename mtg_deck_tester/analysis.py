@@ -340,13 +340,15 @@ AI_SYSTEM = ("You are an expert Magic: The Gathering Commander deckbuilder and c
              "target Commander bracket (Game Changer limits: bracket 1-2 none, bracket 3 up to three). "
              "If combo data is included, judge combo decks by the goldfish speed and combo data rather than "
              "by Forge results alone, and suggest how to protect or speed up the combos, or how to get them past the field's interaction. "
+             "If a budget in EUR is given, keep the total price of your suggested additions within it, using the prices provided. "
              "Answer in Markdown with these sections: 'Summary' (2-3 sentences), 'Weak points' (most important "
              "first, each tied to evidence), 'Swaps' (a table of 6-10 concrete cut -> add pairs with a short reason; "
              "only cut cards that are in the deck; only add real cards legal in the colour identity), and "
              "'How to pilot it' (2-4 tips). Be concise and specific.")
 
 
-def ai_analysis(api_key, model, deck, profile, analysis, results, bracket, combo_data=None):
+def ai_analysis(api_key, model, deck, profile, analysis, results, bracket, combo_data=None, upgrades=None,
+                edhrec_view=None, budget=None):
     me = next(s for s in results["standings"] if s["id"] == USER)
     payload = {
         "commander": deck.commanders, "bracket": bracket, "colour_identity": profile["identity"],
@@ -366,6 +368,11 @@ def ai_analysis(api_key, model, deck, profile, analysis, results, bracket, combo
                                           for r in analysis["early_game"]["games"]],
         "popular_in_similar_decks_not_in_yours": [a["card"] for a in analysis["add_candidates"]],
     }
+    if upgrades:
+        payload["budget_eur"] = budget
+        payload["priced_upgrade_candidates"] = [{k: a[k] for k in ("card", "price", "why")} for a in upgrades["top_adds"]]
+    if edhrec_view:
+        payload["edhrec"] = {"popular_cards_missing": edhrec_view["missing"], "unusual_picks": edhrec_view["unusual"]}
     if combo_data:
         payload["combos"] = {
             "note": "Forge's AI plays combos poorly; the goldfish numbers are solo simulations of deliberate play.",

@@ -4,6 +4,30 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [3.0.0] - 2026-11-19
+
+### Added
+- Import a deck by pasting an Archidekt (or Moxfield) link.
+- Win check: the goldfish estimates the turn your deck wins alone (combat, commander damage,
+  drain, poison, mill, combos) and where the damage comes from; lists "win the game" cards.
+- Key moments: round-by-round summary of every game (your spells, life totals, knock-outs).
+- Prices (Cardmarket EUR via Scryfall) on all suggestions; deck values in the report.
+- Upgrade budget: highest-impact add/cut swaps that fit the amount you enter.
+- Match opponents to your deck's value (±30%).
+- EDHREC comparison: popular cards you don't play and your unusual picks.
+- Play style: Forge AI personality for you and the opponents, mulligan rules for your deck.
+- Sleep-proof runs: keeps the computer awake; sleep time no longer counts towards time limits.
+
+### Changed
+- Much faster runs: Forge starts once per worker and plays many games; stalled games end early
+  (turn limit, no life change); games at once is chosen automatically.
+- New interface following Apple's Human Interface Guidelines (system font, grouped sections,
+  segmented controls, switches, settings sheet, dark mode). No more web fonts.
+- New PDF design in the same style, using the bundled Inter font.
+
+### Fixed
+- Games stopped as draws were sometimes counted as wins.
+
 ## [2.3.0] - 2026-11-17
 
 ### Changed

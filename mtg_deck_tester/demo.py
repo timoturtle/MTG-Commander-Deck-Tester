@@ -117,3 +117,38 @@ class DemoSpellbook:
         a, b, c = rnd.sample(names, 3)
         return {"included": [combo([a, b]), combo([b, c], wins=False)],
                 "almost": [combo([a, "Demo Missing Piece"])]}
+
+
+def demo_card_data(card_db, decks):
+    """Invent card data (types, costs, prices) for demo decks so every report section has content."""
+    card_db.resolve = lambda names: []
+    card_db.save = lambda: None
+    names = {n for d in decks for n in d.all_names()} | {f"Demo Staple {i}" for i in range(1, 16)}
+    for n in names:
+        rnd = random.Random(n)
+        base = n.lower()
+        if base in ("forest", "mountain", "island", "swamp", "plains"):
+            info = {"type_line": f"Basic Land — {n}", "cmc": 0, "oracle": "", "power": None, "eur": 0.1}
+        else:
+            kind = rnd.choice(["creature"] * 5 + ["ramp", "draw", "removal", "wipe"])
+            cmc = rnd.randint(1, 6)
+            info = {"type_line": "Creature — Goblin" if kind == "creature" else "Sorcery", "cmc": cmc,
+                    "power": str(rnd.randint(1, 5)) if kind == "creature" else None,
+                    "oracle": {"creature": "", "ramp": "Search your library for a basic land card, put it onto the battlefield tapped.",
+                               "draw": "Draw two cards.", "removal": "Destroy target creature.",
+                               "wipe": "Destroy all creatures."}[kind],
+                    "eur": round(rnd.choice([0.2, 0.5, 1, 2, 4, 8, 15, 30]) * rnd.uniform(0.8, 1.2), 2)}
+        info.update({"name": n, "forge_name": n, "layout": "normal", "color_identity": [], "game_changer": False,
+                     "legal_commander": True, "keywords": [], "usd": None, "mana_cost": "", "v": 2,
+                     "fetched": 2 ** 40})
+        card_db.cards[n.lower()] = info
+
+
+def demo_edhrec(deck):
+    rnd = random.Random(deck.commanders[0])
+    cards = {n: {"inclusion": rnd.choice([2, 8, 20, 35, 55, 70]), "synergy": round(rnd.uniform(-0.1, 0.4), 2),
+                 "list": "Top Cards"} for _, n in deck.cards if n.lower() not in ("mountain", "forest", "island")}
+    for i in range(1, 16):
+        cards[f"Demo Staple {i}"] = {"inclusion": rnd.randint(25, 80), "synergy": round(rnd.uniform(0, 0.5), 2),
+                                     "list": "High Synergy Cards"}
+    return {"url": "https://edhrec.com/", "decks": 4321, "cards": cards}

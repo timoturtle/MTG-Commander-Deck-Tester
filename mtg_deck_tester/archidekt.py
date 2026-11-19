@@ -82,9 +82,9 @@ class Archidekt:
                                        _colors_of(r), r.get("edhBracket"), from_cmd))
         return found
 
-    def fetch(self, deck_id):
+    def fetch(self, deck_id, refresh=False):
         path = os.path.join(self.cache_dir, f"{deck_id}.json")
-        if os.path.exists(path):
+        if os.path.exists(path) and not refresh:
             with open(path, encoding="utf-8") as f:
                 data = json.load(f)
         else:

@@ -21,9 +21,12 @@ final standing, your place in every pod, your deck's weak points and concrete su
 - [Installation on Windows](#installation-on-windows)
 - [Using the app](#using-the-app)
 - [How opponents are chosen](#how-opponents-are-chosen)
+- [Upgrades, prices and EDHREC](#upgrades-prices-and-edhrec)
 - [Combos and consistency](#combos-and-consistency)
 - [Opening hands and early plays](#opening-hands-and-early-plays)
 - [How the tournament works](#how-the-tournament-works)
+- [Play style: AI personality and mulligans](#play-style-ai-personality-and-mulligans)
+- [Speed and sleep](#speed-and-sleep)
 - [Optional extras](#optional-extras)
 - [Where your files are](#where-your-files-are)
 - [Updating and uninstalling](#updating-and-uninstalling)
@@ -37,15 +40,17 @@ final standing, your place in every pod, your deck's weak points and concrete su
 - **Weak points**, found by comparing your deck with the rest of the field across all games:
   land drops by turn 4, when your commander comes down, damage dealt and taken, mulligans,
   spells per turn and how you lost (combat, commander damage, combos...)
-- **Deck makeup check**: lands, ramp, card draw, removal, board wipes and curve
+- **Recommended upgrades with prices**: add/cut swaps with the most impact for a budget you choose,
+  based on EDHREC, your weak points and combos (prices from Cardmarket, in EUR)
+- **EDHREC comparison**: popular cards with your commander that you don't play, and your unusual picks
 - **Combos and consistency**: every combo in your deck (from Commander Spellbook), how fast your
-  deck assembles them when it plays towards them on purpose, combos you're one card away from,
-  combos above your bracket, and the counterspells in the field
+  deck assembles them, combos you're one card away from and combos above your bracket
+- **Win check**: the turn your deck typically wins on its own, through combat, commander damage,
+  drain, poison, mill or combos
+- **Key moments** of every game: your spells round by round, life totals, who knocked out whom
 - **Opening hands and early plays**: the hand your deck kept in every game, and whether it
   cast something other than a land on its turn 1 and turn 2
-- **Suggestions**: cards you never cast during testing, and cards that are popular in the
-  opponent decks, legal in your colours and fitting your weak points
-- **Coaching notes from Claude** (optional): concrete cut → add swaps that respect your bracket
+- **Coaching notes from Claude** (optional): concrete cut → add swaps that respect your bracket and budget
 - A **PDF report** that reads well on phones, tablets and computers
 
 ## What you need
@@ -56,7 +61,7 @@ final standing, your place in every pod, your deck's weak points and concrete su
 | Java 17 or newer, as a **JDK** | Running Forge; the JDK's compiler records opening hands | Free |
 | Forge | Playing the games | Free |
 | Internet connection | Card data and opponent decks | – |
-| 8 GB RAM (16 GB recommended) | Each Forge game uses up to 4 GB | – |
+| 8 GB RAM (16 GB recommended) | Each running Forge game uses up to 3 GB | – |
 | Claude API key | Coaching notes (optional) | Pay per use |
 
 ---
@@ -126,7 +131,7 @@ folder from Finder into the **Forge folder** box, click **Check Forge and Java**
 | "Permission denied" | In Terminal: `chmod +x ` then drag the file in, press Enter. Or use `bash start-mac.command`. |
 | "Java was not found" | Install Temurin (step 2), then close and restart the app. |
 | "certificate verify failed" | Delete the `.venv` folder inside the app folder and start again. |
-| Mac gets very slow during a test | Settings → **Games at once** → 1. |
+| Mac gets very slow during a test | Settings → **Games at once** → 1 or 2. |
 | Opening hands say "not recorded" | You have a Java runtime without the compiler. Install the Temurin **JDK** (step 2) and restart the app. |
 
 ---
@@ -196,29 +201,29 @@ Tip: in File Explorer, Shift + right-click the folder → **Copy as path**, then
 | The Microsoft Store opens when Python starts | Settings → Apps → Advanced app settings → App execution aliases → turn off the two "python" entries. |
 | "Java was not found" | Install Temurin (step 2), then close and restart the app. |
 | The window closes immediately | Open Command Prompt, `cd` into the app folder and run `start-windows.bat` to see the error. |
-| PC gets very slow during a test | Settings → **Games at once** → 1. |
+| PC gets very slow during a test | Settings → **Games at once** → 1 or 2. |
 | Opening hands say "not recorded" | You have a Java runtime without the compiler. Install the Temurin **JDK** (step 2) and restart the app. |
 
 ---
 
 ## Using the app
 
-1. **Copy your decklist**
-   - Archidekt: open your deck → **Export** → **Text** → **Copy**.
-   - Moxfield: open your deck → **Export** → copy the list.
+1. **Add your deck**, either way:
+   - Paste a deck link from **Archidekt** into the link field and click **Import**. The deck must be
+     public. (Moxfield links need a Moxfield User-Agent, see [Optional extras](#optional-extras).)
+   - Or copy the list: in Archidekt **Export → Text → Copy**, in Moxfield **Export** → copy the list,
+     and paste it into the big text field. If the commander isn't found, type it into **Commander**.
+2. Click **Check deck** to see lands, ramp, draw, removal, an estimated bracket and the deck's value.
+3. Choose the **bracket** (or Auto), the number of **decks** and **rounds**. Optionally switch on
+   **Match my deck's value** and enter a **budget** for upgrades.
+4. Optional: set the **play style** (AI personality, mulligan rules) and paste links of decks you
+   definitely want to face into **Specific opponents**.
+5. Click **Start test**. Progress is shown at the top right; "Show log" shows every step.
+6. When it finishes, click **Download PDF**. Past reports are in the menu at the top.
 
-   Paste it into **Decklist**. The commander is found from Archidekt's Commander category; if it
-   isn't, type it into **Commander**.
-2. Click **Check deck** to see your counts of lands, ramp, draw and removal, and an estimated bracket.
-3. Choose the **bracket** (or Auto), the number of **decks** and **rounds**.
-4. Optional: paste Archidekt or Moxfield links of decks you definitely want to face into
-   **Specific opponents**.
-5. Click **Start test tournament**. You can follow every game in the log.
-6. When it finishes, click **Download PDF report**. All past reports are in the menu at the top.
-
-**How long does it take?** One Forge game takes about 2–6 minutes. The default (12 decks,
-5 rounds = 15 games, 2 at once) takes roughly 30–45 minutes. "Only play my pods" is about
-three times faster but gives no overall standing.
+**How long does it take?** One Forge game usually takes 1–6 minutes. The default (12 decks,
+5 rounds = 15 games) takes roughly 20–45 minutes, depending on your computer and how long your
+decks' games last. "Only play my pods" is about three times faster but gives no overall standing.
 
 ## How opponents are chosen
 
@@ -232,6 +237,25 @@ three times faster but gives no overall standing.
    your own colour identity is counted too. The log lists the identities in the field.
 4. **Variety:** at most one deck with your own commander (two in a 16-deck field), no duplicate
    commanders, no copies of your own deck, and only legal 100-card decks.
+5. **Value (optional):** with **Match my deck's value** on, only decks worth within ±30% of yours
+   are used. If there aren't enough, the app widens to ±50%, then any value, and says so in the log.
+
+## Upgrades, prices and EDHREC
+
+- **Prices** come from Scryfall (Cardmarket trend price in EUR, for one printing of each card).
+  Your own copies or other printings may cost less. Prices are refreshed weekly.
+- **Recommended upgrades:** every possible addition gets an impact score from how often players
+  run it with your commander on EDHREC, its synergy with your commander, the opponent decks,
+  whether it fixes one of your weak points (ramp, draw, removal, board wipes, interaction) and
+  whether it completes a combo allowed in your bracket. Each addition is paired with a cut: cards
+  you never cast in testing or that are rarely played with your commander. Cards that fill a role
+  your deck is already short on are never suggested as cuts.
+- **Budget:** enter an amount and the app picks the highest-impact swaps that fit it. Without a
+  budget it shows the highest-impact swaps regardless of price.
+- **EDHREC comparison:** popular cards with your commander that you don't play, and your unusual
+  picks (your spice, or candidates to cut). EDHREC has no official API; the app reads the data its
+  website uses, slowly and cached for a week. If EDHREC changes its format, this section is
+  skipped and the log says so.
 
 ## Combos and consistency
 
@@ -252,8 +276,20 @@ they play. The report therefore adds a section that doesn't rely on Forge's AI:
   chance one of three opponents holds a counterspell by turn 6. (Only your own deck is checked for
   combos, which keeps runs quick.)
 
+- **Win check:** the same goldfish games continue to turn 15 against three opponents at 40 life who
+  never block. It reports how often the deck wins alone by turn 8, 10 and 12, the typical winning
+  turn and where the damage comes from (combat, commander damage, drain, poison, mill). Cards that
+  say "you win the game" are listed with how often they could be cast by turn 8.
+
 The goldfish is an estimate: there are no opponents, and card effects are simplified to ramp, card
-draw, tutors and the combo pieces. Use it to compare versions of your deck rather than as a promise.
+draw, tutors, damage and the combo pieces. Token makers and pump effects aren't counted, so wide
+token decks are faster than shown. Use it to compare versions of your deck rather than as a promise.
+
+## Key moments
+
+For every game of your deck the report shows a short round-by-round summary (one round = every
+player took a turn): the spells you cast, everyone's life total at the end of the round, who was
+knocked out and by which card, and big damage swings. In the app, click a game to open it.
 
 ## Opening hands and early plays
 
@@ -262,16 +298,42 @@ mulligans) and whether it cast something other than a land on its own turn 1 and
 totals such as "non-land play on turn 2 in 4 of 5 games".
 
 Forge doesn't write opening hands into its game log, so the first time you run a test the app
-builds a tiny helper (`mtg_deck_tester/java/HandSim.java`) with the JDK's Java compiler, against
-your own copy of Forge. If no JDK is found, everything else still works and the hands show as
-"not recorded". Forge gives a free first mulligan in Commander; it is included in the mulligan count.
+builds a small helper (`mtg_deck_tester/java/HandSim.java`) with the JDK's Java compiler, against
+your own copy of Forge. The same helper also makes runs faster and enables the play-style options
+below. If no JDK is found, everything else still works: games run in Forge's normal mode, and hands
+show as "not recorded". Forge gives a free first mulligan in Commander; it is included in the
+mulligan count.
 
 ## How the tournament works
 
 - Every round all decks play in pods of four. After round 1, decks with similar scores meet (Swiss).
 - Seats are random. Places come from the order players are knocked out.
-- Points per game: 1st 4, 2nd 2, 3rd 1, 4th 0. Games that reach the time limit (Settings) are draws:
-  players still alive get 1 point.
+- Points per game: 1st 4, 2nd 2, 3rd 1, 4th 0. Games that are stopped (time limit, turn limit, or no
+  life total changed for 16 turns) are draws: players still alive get 1 point.
+
+## Play style: AI personality and mulligans
+
+- **AI personality:** pick one of Forge's six built-in AI profiles (Default, Cautious, Reckless,
+  Experimental, Hard, Hardest) for your deck and one for the opponents. They change how
+  aggressively the AI attacks, trades creatures and uses counterspells.
+- **Mulligan rules for your deck:** keep only hands with a set number of lands (e.g. 3–5), optionally
+  require a play costing 2 mana or less, and set the most mulligans to take. Without rules, Forge
+  decides as usual. The report shows which settings were used.
+
+These options need the helper described in [Opening hands](#opening-hands-and-early-plays).
+
+## Speed and sleep
+
+- **Forge starts once per worker** and plays all its games in that session, instead of spending
+  10–20 seconds starting up before every game. It restarts itself every 12 games to stay fresh.
+- **Games at once** is set automatically from your computer's cores and memory (about 3 GB per
+  game). You can choose a fixed number in Settings.
+- **Stalled games end early:** after 60 turns (15 rounds), or when no life total changed for
+  16 turns, a game ends as a draw.
+- **Sleep-proof:** while a test runs, the app keeps the computer awake (on a Mac also when the
+  display turns off, as long as it's on power). If it sleeps anyway, for example when you close a
+  MacBook's lid, the tournament pauses and continues after waking; sleep time doesn't count towards
+  the time limit.
 
 ## Optional extras
 
@@ -318,8 +380,9 @@ Never share `settings.json`: it contains your API keys.
   links into "Specific opponents".
 - The app was built and tested against Forge 2.0.16. Newer Forge versions usually work; if the
   opening-hand helper stops compiling, the app falls back to Forge's normal mode automatically.
-- The combo section depends on Commander Spellbook being reachable; without it the consistency
-  numbers are still shown.
+- The combo section depends on Commander Spellbook, and the comparison on EDHREC, being reachable;
+  without them the rest of the report is still created.
+- Prices are for one printing per card and can differ from what you'd actually pay.
 - Weak points like "light on ramp" come from simple card-text rules and can miss unusual cards.
 
 ## For developers
@@ -333,10 +396,15 @@ mtg_deck_tester/
 ├── moxfield.py     Moxfield search and deck download (opt-in)
 ├── opponents.py    picks a popular, varied field of opponents
 ├── forge.py        runs Forge's simulation mode and parses its game logs
-├── java/HandSim.java  helper that also records opening hands (compiled locally)
-├── tournament.py   Swiss pods of four
+├── java/HandSim.java  Forge helper: one session for many games, opening hands, mulligan rules,
+│                      AI profiles, stall detection (compiled locally against your Forge)
+├── edhrec.py       EDHREC commander data
+├── budget.py       priced upgrade suggestions and EDHREC comparison
+├── power.py        keeps the computer awake during a test
+├── fonts/          Inter font for the PDF (SIL Open Font License)
+├── tournament.py   Swiss pods of four, run on parallel Forge sessions
 ├── spellbook.py    Commander Spellbook combo lookup
-├── goldfish.py     solo Monte Carlo simulation (speed, consistency, combo turns)
+├── goldfish.py     solo Monte Carlo simulation (speed, consistency, combo and win turns)
 ├── combos.py       combo section: your combos, field interaction, Forge cross-check
 ├── analysis.py     weak points, suggestions, optional Claude notes
 ├── report_pdf.py   PDF report (ReportLab)
@@ -368,10 +436,13 @@ Bug reports and pull requests are welcome; see the [changelog](CHANGELOG.md) for
 The code of this project is released under the [MIT License](LICENSE). Third-party software,
 services and their licenses are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md):
 Forge (GPL-3.0) and Java are installed separately and not included; ReportLab (BSD) and certifi
-(MPL-2.0) are installed from PyPI.
+(MPL-2.0) are installed from PyPI; the Inter font (OFL-1.1) is included with its license.
 
-Thanks to the [Forge](https://github.com/Card-Forge/forge) developers, [Commander Spellbook](https://commanderspellbook.com), [Scryfall](https://scryfall.com),
+Thanks to the [Forge](https://github.com/Card-Forge/forge) developers, [Commander Spellbook](https://commanderspellbook.com), [EDHREC](https://edhrec.com), [Scryfall](https://scryfall.com),
 [Archidekt](https://archidekt.com) and [Moxfield](https://moxfield.com).
+
+The PDF reports use the [Inter](https://rsms.me/inter/) typeface (SIL Open Font License 1.1),
+included in `mtg_deck_tester/fonts/` with its license.
 
 MTG Commander Deck Tester is unofficial Fan Content permitted under the
 [Fan Content Policy](https://company.wizards.com/en/legal/fancontentpolicy). Not approved/endorsed by

@@ -15,7 +15,9 @@ from dataclasses import dataclass, field
 BASICS = {"plains", "island", "swamp", "mountain", "forest", "wastes"}
 TYPES = ("creature", "artifact", "enchantment", "instant", "sorcery", "planeswalker", "battle", "land")
 WORDNUM = {"a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "x": 2}
-MAX_TURN = 10
+MAX_TURN = 10        # combos are measured up to here
+KILL_TURN = 15       # the solo win check runs this long
+OPP_LIFE = 40
 
 
 def norm(name):
@@ -37,6 +39,16 @@ class Card:
     draw: int = 0
     engine: bool = False
     types: frozenset = field(default_factory=frozenset)
+    # win check
+    power: int = 0
+    haste: bool = False
+    infect: bool = False
+    toxic: int = 0
+    drain_once: int = 0      # life each opponent loses when cast
+    drain_turn: int = 0      # life each opponent loses per turn while on the battlefield
+    mill_once: int = 0
+    mill_turn: int = 0
+    alt_win: bool = False
 
 
 def model(name, info):
@@ -47,6 +59,7 @@ def model(name, info):
     o = (info.get("oracle") or "").split(" // ")[0].lower()
     types = frozenset(t for t in TYPES if t in tl)
     c = Card(name, cmc=int(round(info.get("cmc") or 0)), types=types)
+    _win_traits(c, info, o)
     if "land" in types:
         c.land, c.cmc = True, 0
         c.tapped = ("enters tapped" in o or "enters the battlefield tapped" in o) and "unless" not in o
@@ -78,6 +91,39 @@ def model(name, info):
         elif not permanent or "when" in o:
             c.draw = n
     return c
+
+
+def _num(s, default=2):
+    s = (s or "").strip().lower()
+    return int(s) if s.isdigit() else WORDNUM.get(s, default)
+
+
+def _win_traits(c, info, o):
+    """Non-combat and combat ways a card helps the deck win on its own."""
+    p = str(info.get("power") or "")
+    c.power = int(p) if p.isdigit() else (2 if p else 0)
+    kw = " ".join(info.get("keywords") or []).lower()
+    c.haste = "haste" in kw or "haste" in o.split("\n")[0]
+    c.infect = "infect" in kw
+    tm = re.search(r"toxic (\d+)", o)
+    c.toxic = int(tm.group(1)) if tm else 0
+    repeat = bool(re.search(r"(whenever|at the beginning of)", o))
+    dm = re.search(r"each opponent loses (\w+) life|deals (\w+) damage to each opponent|"
+                   r"each opponent loses x life", o)
+    if dm:
+        n = _num(dm.group(1) or dm.group(2) or "x", default=3)
+        if repeat and c.types & {"creature", "artifact", "enchantment", "planeswalker"}:
+            c.drain_turn = min(n, 3)
+        else:
+            c.drain_once = min(n, 10)
+    mm = re.search(r"(?:each opponent|target player|target opponent) mills (\w+)", o)
+    if mm:
+        n = _num(mm.group(1), default=3)
+        if repeat and c.types & {"creature", "artifact", "enchantment", "planeswalker"}:
+            c.mill_turn = min(n, 10)
+        else:
+            c.mill_once = min(n, 30)
+    c.alt_win = "you win the game" in o
 
 
 class Goldfish:
@@ -142,7 +188,16 @@ class Goldfish:
         cmd_cast = [False] * len(self.cmds)
         sources = []          # (amount, first usable turn)
         engines = 0
-        res = {"mulls": mulls, "kept": 7 - bottom_n, "kept_lands": kept_lands, "first_play": None,
+        opp = [{"life": OPP_LIFE, "poison": 0, "cmd": 0, "lib": 92} for _ in range(3)]
+        attackers = []        # [power, infect, toxic, is_commander, first attack turn]
+        drain_engines = mill_engines = 0
+        dmg = {"combat": 0, "commander": 0, "drain": 0, "poison": 0, "mill": 0}
+
+        def alive():
+            return [o for o in opp if o["life"] > 0 and o["poison"] < 10 and o["cmd"] < 21 and o["lib"] >= 0]
+
+        res = {"kill": None, "altwin": None, "dmg": dmg,
+               "mulls": mulls, "kept": 7 - bottom_n, "kept_lands": kept_lands, "first_play": None,
                "t1": False, "t2": False, "cmd_turn": None, "lands_t3": 0, "mana": {}, "combo": [None] * len(self.combos),
                "lands_seen": 0}
         seen = 7
@@ -182,7 +237,7 @@ class Goldfish:
                     best = miss
             return best or []
 
-        for t in range(1, MAX_TURN + 1):
+        for t in range(1, KILL_TURN + 1):
             draw(1 + engines)
             # land drop (untapped first)
             lands_in_hand = [i for i in hand if C[i].land]
@@ -226,6 +281,8 @@ class Goldfish:
                         return 2
                     if c.draw or c.engine:
                         return 4
+                    if c.power >= 2 or c.drain_turn or c.mill_turn or c.drain_once or c.mill_once:
+                        return 3.5
                     return 5
                 options = [(prio(i), -C[i].cmc, i) for i in hand
                            if not C[i].land and C[i].cmc <= mana and i not in self.hold]
@@ -281,6 +338,47 @@ class Goldfish:
                     draw(c.draw)
                 if c.engine:
                     engines += 1
+                if "creature" in c.types and (c.power or c.infect):
+                    attackers.append([c.power, c.infect, c.toxic, isinstance(pick, tuple), t if c.haste else t + 1])
+                for o in alive():
+                    if c.drain_once:
+                        o["life"] -= c.drain_once
+                        dmg["drain"] += c.drain_once
+                    if c.mill_once:
+                        o["lib"] -= c.mill_once
+                        dmg["mill"] += c.mill_once
+                drain_engines += c.drain_turn
+                mill_engines += c.mill_turn
+            # alt-win cards: first turn one could be cast
+            if res["altwin"] is None and any(C[i].alt_win and C[i].cmc <= res["mana"].get(t, 0) for i in hand | bf):
+                res["altwin"] = t
+            # combat (no blockers) and per-turn engines
+            for a in attackers:
+                if a[4] > t:
+                    continue
+                targets = alive()
+                if not targets:
+                    break
+                o = min(targets, key=lambda x: (x["poison"] * 4 if a[1] else x["life"]))
+                if a[1]:
+                    o["poison"] += a[0]
+                    dmg["poison"] += a[0]
+                else:
+                    o["life"] -= a[0]
+                    dmg["commander" if a[3] else "combat"] += a[0]
+                    if a[2]:
+                        o["poison"] += a[2]
+                        dmg["poison"] += a[2]
+                if a[3]:
+                    o["cmd"] += a[0]
+            for o in alive():
+                if drain_engines:
+                    o["life"] -= drain_engines
+                    dmg["drain"] += drain_engines
+                o["lib"] -= 1 + mill_engines
+                dmg["mill"] += mill_engines
+            if res["kill"] is None and not alive():
+                res["kill"] = t
             if t == 1:
                 res["t1"] = casted_this_turn
             if t == 2:
@@ -289,7 +387,7 @@ class Goldfish:
         return res
 
     # ------------------------------------------------------------------ many games
-    def run(self, n=5000, seed=None):
+    def run(self, n=5000, seed=None, win_combo_idx=()):
         rng = random.Random(seed)
         games = [self._game(rng) for _ in range(n)]
         pct = lambda k: round(100 * k / n, 1)
@@ -301,6 +399,18 @@ class Goldfish:
             return out
 
         combo_stats = [by_turn([g["combo"][k] for g in games]) for k in range(len(self.combos))]
+
+        def kill_by_turn(turns):
+            out = {f"t{t}": pct(sum(1 for x in turns if x is not None and x <= t)) for t in (6, 8, 10, 12, 15)}
+            done = sorted(x for x in turns if x is not None)
+            out["median"] = done[len(done) // 2] if len(done) * 2 >= n else None
+            return out
+        totals = {k: sum(g["dmg"][k] for g in games) for k in ("combat", "commander", "drain", "poison", "mill")}
+        all_dmg = sum(totals.values()) or 1
+        win = {"solo_kill": kill_by_turn([g["kill"] for g in games]),
+               "sources": {k: round(100 * v / all_dmg) for k, v in totals.items() if v},
+               "altwin": kill_by_turn([g["altwin"] for g in games]) if any(g["altwin"] for g in games) else None,
+               "alt_win_cards": sorted({c.name for c in self.cards if c.alt_win})}
         any_turn = [min((x for x in g["combo"] if x is not None), default=None) for g in games]
         cmd_cmc = min((c.cmc for c in self.cmds), default=0)
         return {
@@ -319,6 +429,9 @@ class Goldfish:
             "combo_any": by_turn(any_turn) if self.combos else None,
             "combo_each": combo_stats,
             "simulated_combos": len(self.combos),
+            "win": win,
+            "win_any": kill_by_turn([min([x for x in [g["kill"]] + [g["combo"][k] for k in win_combo_idx]
+                                         if x is not None], default=None) for g in games]),
         }
 
 

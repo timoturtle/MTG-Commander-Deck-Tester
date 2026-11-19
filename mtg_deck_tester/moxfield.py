@@ -71,9 +71,9 @@ class Moxfield:
                 break
         return found
 
-    def fetch(self, public_id):
+    def fetch(self, public_id, refresh=False):
         path = os.path.join(self.cache_dir, f"{public_id}.json")
-        if os.path.exists(path):
+        if os.path.exists(path) and not refresh:
             with open(path, encoding="utf-8") as f:
                 data = json.load(f)
         else:

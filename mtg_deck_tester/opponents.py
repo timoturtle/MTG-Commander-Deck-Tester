@@ -54,7 +54,9 @@ def _overlap(a, b):
     return len(sa & sb) / max(1, min(len(sa), len(sb)))
 
 
-def pick(sources, user_deck, user_identity, bracket, wanted, card_db, log, manual=(), recent=(), rng=None):
+def pick(sources, user_deck, user_identity, bracket, wanted, card_db, log, manual=(), recent=(), rng=None,
+         value_target=None, value_tolerance=0.3):
+    """value_target: your deck's value in EUR to match within value_tolerance, or None if value doesn't matter."""
     """sources: list of objects with .search(commanders, bracket) and .fetch(ref)."""
     picked = list(manual)
     ids = Counter({frozenset(user_identity): 1})
@@ -95,12 +97,13 @@ def pick(sources, user_deck, user_identity, bracket, wanted, card_db, log, manua
         log(f"  {n_recent} of these were in your recent runs and are less likely to be picked")
 
     cache, rejected, fetches = {}, set(), 0
+    max_fetches = MAX_FETCHES + (40 if value_target else 0)
 
     def load(c, src):
         nonlocal fetches
         if c.key in cache:
             return cache[c.key]
-        if fetches >= MAX_FETCHES:
+        if fetches >= max_fetches:
             return None
         fetches += 1
         try:
@@ -110,17 +113,27 @@ def pick(sources, user_deck, user_identity, bracket, wanted, card_db, log, manua
             d = None
         if d:
             try:
-                card_db.resolve(d.commanders)
+                card_db.resolve(d.all_names() if value_target else d.commanders)
             except Exception:
                 pass
+            if value_target:
+                from .scryfall import deck_value
+                d.value = deck_value(d, card_db)[0]
             moved = clean_commanders(d, card_db)
             if moved:
                 log(f"  fixed {d.name}: {', '.join(moved)} is not a commander")
         cache[c.key] = d
         return d
 
-    strict_passes = [(True, 1), (True, 2), (False, 2), (False, 3), (False, 99)]
-    for strict_bracket, cap in strict_passes:
+    strict_passes = [(True, 1, value_tolerance), (True, 2, value_tolerance), (False, 2, value_tolerance),
+                     (False, 3, max(value_tolerance, 0.5)), (False, 99, max(value_tolerance, 0.5)), (False, 99, None)]
+    if not value_target:
+        strict_passes = [p for p in strict_passes if p[2] is not None]
+    warned_value = False
+    for strict_bracket, cap, tol in strict_passes:
+        if value_target and tol is None and not warned_value and len(picked) < wanted:
+            log("Not enough decks close to your deck's value; also using decks with other values...")
+            warned_value = True
         for _, _, c, src in pool:
             if len(picked) >= wanted:
                 break
@@ -144,6 +157,8 @@ def pick(sources, user_deck, user_identity, bracket, wanted, card_db, log, manua
                 continue
             if bracket and d.bracket is None and strict_bracket:
                 continue
+            if value_target and tol is not None and abs(getattr(d, "value", 0) - value_target) > tol * value_target:
+                continue
             if _overlap(d, user_deck) >= 0.9:
                 log(f"  skipped {d.name}: looks like a copy of your deck")
                 rejected.add(c.key)
@@ -164,10 +179,11 @@ def pick(sources, user_deck, user_identity, bracket, wanted, card_db, log, manua
             picked.append(d)
             used_cmds.add(cmd_key)
             ids[ident] += 1
+            val = f", €{d.value:,.0f}" if getattr(d, "value", None) else ""
             log(f"  + {d.name} ({' & '.join(d.commanders)}, {identity_str(ident)}, "
-                f"bracket {d.bracket or '?'}, {d.source}, {d.views:,} views)")
+                f"bracket {d.bracket or '?'}{val}, {d.source}, {d.views:,} views)")
         if len(picked) >= wanted:
             break
-        if strict_bracket and cap == 2 and len(picked) < wanted:
+        if strict_bracket and cap == 2 and tol == value_tolerance and len(picked) < wanted:
             log("Not enough decks with a matching bracket; also using decks without a bracket set...")
     return picked[:wanted]

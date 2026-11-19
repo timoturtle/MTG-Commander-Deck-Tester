@@ -2,10 +2,14 @@
 import json
 import os
 import threading
+import time
 import urllib.parse
 
 from .net import get_json, post_json
 
+CACHE_VERSION = 2
+USD_TO_EUR = 0.9  # rough fallback when a card has no Cardmarket price
+PRICE_MAX_AGE = 7 * 24 * 3600  # prices are refreshed weekly
 FRONT_FACE_LAYOUTS = {"transform", "modal_dfc", "adventure", "flip", "meld",
                       "reversible_card", "prepare"}
 
@@ -44,18 +48,44 @@ class CardDB:
         oracle = c.get("oracle_text") or " // ".join(f.get("oracle_text", "") for f in faces)
         type_line = c.get("type_line") or " // ".join(f.get("type_line", "") for f in faces)
         mana_cost = c.get("mana_cost") or (faces[0].get("mana_cost", "") if faces else "")
+        prices = c.get("prices") or {}
+
+        def num(v):
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                return None
+        power = c.get("power") or (faces[0].get("power") if faces else None)
         return {"name": c["name"], "forge_name": forge_name, "layout": layout,
                 "cmc": c.get("cmc", 0), "type_line": type_line, "oracle": oracle,
                 "mana_cost": mana_cost, "color_identity": c.get("color_identity", []),
                 "game_changer": bool(c.get("game_changer", False)),
-                "legal_commander": (c.get("legalities", {}).get("commander") == "legal")}
+                "legal_commander": (c.get("legalities", {}).get("commander") == "legal"),
+                "power": power, "keywords": c.get("keywords") or [],
+                "eur": num(prices.get("eur")), "usd": num(prices.get("usd")),
+                "scryfall_uri": c.get("scryfall_uri", ""), "v": CACHE_VERSION, "fetched": int(time.time())}
 
     def get(self, name):
         return self.cards.get(self._key(name))
 
+    def _fresh(self, key):
+        e = self.cards.get(key)
+        return bool(e) and e.get("v") == CACHE_VERSION and time.time() - e.get("fetched", 0) < PRICE_MAX_AGE
+
+    def price(self, name):
+        """Price in EUR (Cardmarket trend via Scryfall). Falls back to USD converted roughly. None if unknown."""
+        e = self.get(name)
+        if not e:
+            return None
+        if e.get("eur") is not None:
+            return e["eur"]
+        if e.get("usd") is not None:
+            return round(e["usd"] * USD_TO_EUR, 2)
+        return None
+
     def resolve(self, names):
         """Look up all names (cached). Returns list of names not found."""
-        missing = sorted({n for n in names if self._key(n) not in self.cards})
+        missing = sorted({n for n in names if not self._fresh(self._key(n))})
         not_found = []
         for i in range(0, len(missing), 75):
             chunk = missing[i:i + 75]
@@ -70,9 +100,9 @@ class CardDB:
             with self.lock:
                 self.cards.update(found)
             for n in chunk:
-                if self._key(n) not in self.cards and self._key(n.split(" // ")[0]) not in self.cards:
+                if not self._fresh(self._key(n)) and not self._fresh(self._key(n.split(" // ")[0])):
                     not_found.append(n)
-                elif self._key(n) not in self.cards:
+                elif not self._fresh(self._key(n)):
                     self.cards[self._key(n)] = self.cards[self._key(n.split(" // ")[0])]
         still = []
         for n in not_found:  # fuzzy fallback for typos / odd formatting
@@ -85,3 +115,15 @@ class CardDB:
         if missing:
             self.save()
         return still
+
+
+def deck_value(deck, card_db):
+    """(total EUR, number of cards without a price)."""
+    total, unknown = 0.0, 0
+    for q, n in [(1, c) for c in deck.commanders] + list(deck.cards):
+        p = card_db.price(n) if card_db else None
+        if p is None:
+            unknown += q
+        else:
+            total += p * q
+    return round(total, 2), unknown

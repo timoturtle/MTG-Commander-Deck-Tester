@@ -63,7 +63,8 @@ def analyze(user_deck, opponents, card_db, bracket, spellbook, log=print, n_user
     sim_combos = [c for c in included if {norm(p["name"]) for p in c["pieces"]} <= deck_names][:MAX_SIM_COMBOS]
     log(f"  {len(included)} combo(s) found, {sum(1 for c in included if c['wins'])} of them game-winning. "
         "Goldfishing your deck...")
-    gf = Goldfish(user_deck, card_db, sim_combos).run(n_user, seed=1)
+    gf = Goldfish(user_deck, card_db, sim_combos).run(
+        n_user, seed=1, win_combo_idx=[i for i, c in enumerate(sim_combos) if c["wins"]])
     out["goldfish"] = gf
     sim_map = {id(c): st for c, st in zip(sim_combos, gf["combo_each"])}
     out["included"] = [_combo_view(c, sim_map.get(id(c))) for c in included[:20]]
@@ -142,6 +143,13 @@ def weak_points(cd, bracket):
         weak.append(("Combo rarely comes together",
                      f"Goldfishing, your deck assembles a combo by turn 8 in only {gf['combo_any']['t8']}% of games."))
         sugg.append("Add tutors or card draw, or redundant pieces, so your combo shows up more often.")
+    win = gf.get("win") or {}
+    wa = gf.get("win_any") or {}
+    if wa and wa.get("t12", 100) < 50:
+        weak.append(("Slow to win on its own",
+                     f"Playing alone, your deck wins by turn 12 in only {wa.get('t12')}% of goldfish games "
+                     f"(typical: {('turn ' + str(wa['median'])) if wa.get('median') else 'after turn 15'})."))
+        sugg.append("Add finishers that end the game quickly: evasive threats, mass pump, drain effects or a combo.")
     if gf["keep7"] < 70:
         weak.append(("Inconsistent opening hands", f"Only {gf['keep7']}% of 7-card hands are keepable (2–5 lands with plays)."))
     if gf["screw"] > 25:

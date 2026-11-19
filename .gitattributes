@@ -6,3 +6,4 @@
 *.pdf binary
 *.png binary
 *.java text eol=lf
+*.ttf binary
