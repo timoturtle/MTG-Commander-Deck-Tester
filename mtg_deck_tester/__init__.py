@@ -1,3 +1,3 @@
 """MTG Commander Deck Tester - automated Commander deck testing with Forge's AI."""
-__version__ = "3.1.0"
+__version__ = "3.1.1"
 APP_NAME = "MTG Commander Deck Tester"

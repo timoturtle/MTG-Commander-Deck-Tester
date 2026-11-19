@@ -255,7 +255,42 @@ METRICS = [("place", "Average pod finish", False), ("lands_t4", "Lands by your t
            ("survived", "Games survived to the end", True)]
 
 
+def group_casts(items):
+    """'Capsize (cast 3× – why)', 'Capsize (cast 4× – why)' -> 'Capsize ×2 (why)'."""
+    out, idx = [], {}
+    for x in items:
+        m = re.match(r"^(.*?) \(cast \d+× – (.*)\)$", x)
+        name = m.group(1) if m else x
+        if name in idx:
+            o = out[idx[name]]
+            o[1] += 1
+            if m:
+                o[2] = m.group(2)
+        else:
+            idx[name] = len(out)
+            out.append([name, 1, m.group(2) if m else None])
+    return [n + (f" ×{k}" if k > 1 else "") + (f" ({w})" if w else "") for n, k, w in out]
+
+
+def _short(text, limit):
+    text = str(text)
+    return text if len(text) <= limit else text[:limit - 1].rstrip(" ,;") + "…"
+
+
 def build_pdf(rep, path):
+    """Builds the PDF. If some content is too large for a page, it retries with the key-moments
+    appendix shortened, then without it, so a report is always produced."""
+    from reportlab.platypus.doctemplate import LayoutError
+    last = None
+    for mode in ("full", "compact", "no_moments"):
+        try:
+            return _build_pdf(rep, path, mode)
+        except LayoutError as e:
+            last = e
+    raise last
+
+
+def _build_pdf(rep, path, moments_mode="full"):
     S = _styles()
     R, A = rep["results"], rep["analysis"]
     me = next(s for s in R["standings"] if s["id"] == "D01")
@@ -476,7 +511,12 @@ def build_pdf(rep, path):
     # ---------------- opening hands (summary at the end, as requested by users)
     story += _early_section(A.get("early_game"), S, W)
     # ---------------- key moments (appendix)
-    story += _moments_section(R, names, S, W)
+    if moments_mode != "no_moments":
+        story += _moments_section(R, names, S, W, compact=moments_mode == "compact")
+    else:
+        story.append(Paragraph("Key moments", S["h2"]))
+        story.append(Paragraph("The key moments were too long for the PDF; open the report in the app to see them.",
+                               S["secondary"]))
 
     story.append(Spacer(1, 12))
     story.append(Paragraph(
@@ -612,7 +652,7 @@ def _early_section(E, S, W):
     return out
 
 
-def _moments_section(R, names, S, W):
+def _moments_section(R, names, S, W, compact=False):
     games = sorted([g for g in R["games"] if "D01" in g["players"] and g.get("timeline")], key=lambda g: g["round"])
     if not games:
         return []
@@ -637,8 +677,11 @@ def _moments_section(R, names, S, W):
                  Spacer(1, 3)]
         rows = []
         for T in g["timeline"][:18]:
-            casts = T.get("cast_detail") or T["cast"]
-            plays = [", ".join(casts)] if casts else []
+            casts = group_casts(T.get("cast_detail") or T["cast"])
+            limit = 8 if compact else 14
+            if len(casts) > limit:
+                casts = casts[:limit] + [f"+{len(casts) - limit} more"]
+            plays = [_short(", ".join(casts), 260 if compact else 700)] if casts else []
             life = T.get("life") or {}
             lt = f"<b>{life.get('D01', '–')}</b> · " + " · ".join(str(life.get(s, '–')) for s in opp)
             notes = [fix(e["text"]) for e in T.get("events", [])]
@@ -656,7 +699,8 @@ def _moments_section(R, names, S, W):
             if not casts and not notes and T["round"] > 2:
                 continue  # only lands played: nothing to tell
             rows.append([Paragraph(str(T["round"]), S["cellc"]), Paragraph(t(" · ".join(plays) or "–"), S["cell"]),
-                         Paragraph(lt, S["cell"]), Paragraph(t("; ".join(notes)), S["cellsec"])])
+                         Paragraph(lt, S["cell"]),
+                         Paragraph(t(_short("; ".join(notes), 260 if compact else 600)), S["cellsec"])])
         if rows:
             block.append(_list(rows, [W * 0.08, W * 0.42, W * 0.17, W * 0.33], S,
                                header=[Paragraph(h, S["th"]) for h in ("#", "Your spells", "Life", "Notes")]))

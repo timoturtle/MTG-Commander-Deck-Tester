@@ -89,20 +89,42 @@ class Job:
 JOB = Job()
 
 
-def write_reports(rep, workdir, log=print):
-    with open(os.path.join(workdir, "report.json"), "w", encoding="utf-8") as f:
-        json.dump(rep, f)
-    with open(os.path.join(workdir, "report.md"), "w", encoding="utf-8") as f:
-        f.write(report_md.to_markdown(rep))
+def _json_safe(x):
+    """NaN/Infinity aren't valid JSON for the browser; store them as null."""
+    if isinstance(x, float) and (x != x or x in (float("inf"), float("-inf"))):
+        return None
+    if isinstance(x, dict):
+        return {k: _json_safe(v) for k, v in x.items()}
+    if isinstance(x, (list, tuple)):
+        return [_json_safe(v) for v in x]
+    return x
+
+
+def build_pdf(rep, workdir, log=print):
+    """Returns an error message, or '' when the PDF was written."""
     try:
         from . import report_pdf
         report_pdf.build_pdf(rep, os.path.join(workdir, "report.pdf"))
+        return ""
     except ImportError:
-        log("PDF skipped: the 'reportlab' package is missing. Start the app with the start script, "
-            "or run: pip install -r requirements.txt")
+        msg = "the 'reportlab' package is missing (start the app with the start script)"
     except Exception as e:
-        log(f"PDF could not be created: {e}")
         traceback.print_exc()
+        msg = f"{type(e).__name__}: {str(e)[:200]}"
+    log(f"PDF could not be created: {msg}")
+    return msg
+
+
+def write_reports(rep, workdir, log=print):
+    rep = _json_safe(rep)
+    rep["pdf_error"] = build_pdf(rep, workdir, log)
+    with open(os.path.join(workdir, "report.json"), "w", encoding="utf-8") as f:
+        json.dump(rep, f, allow_nan=False)
+    try:
+        with open(os.path.join(workdir, "report.md"), "w", encoding="utf-8") as f:
+            f.write(report_md.to_markdown(rep))
+    except Exception as e:
+        log(f"Markdown report could not be created: {e}")
 
 
 def run_job(req):
@@ -389,8 +411,16 @@ class Handler(BaseHTTPRequestHandler):
             p = os.path.join(d, name) if d else None
             if (path == "/api/report.pdf" and d and not os.path.exists(p)
                     and os.path.exists(os.path.join(d, "report.json"))):
+                # older reports, or a PDF that failed: build it now
                 with open(os.path.join(d, "report.json"), encoding="utf-8") as f:
-                    write_reports(json.load(f), d)  # older reports: build the PDF on demand
+                    rep0 = json.load(f)
+                err = build_pdf(rep0, d)
+                if err:
+                    return self._send(500, f"The PDF couldn't be created: {err}".encode("utf-8"),
+                                      "text/plain; charset=utf-8")
+                rep0["pdf_error"] = ""
+                with open(os.path.join(d, "report.json"), "w", encoding="utf-8") as f:
+                    json.dump(rep0, f)
             if not p or not os.path.exists(p):
                 return self._send(404, {"error": "No report yet."})
             with open(p, "rb") as f:

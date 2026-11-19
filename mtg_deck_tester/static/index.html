@@ -277,7 +277,9 @@ const turn = (m, cap=10) => m ? `turn ${m}` : `after turn ${cap}`;
 const PLACE = {1:"var(--gold)",2:"var(--silver)",3:"var(--bronze)",4:"var(--slate)"};
 async function api(path, body){
   const r = await fetch(path, body === undefined ? {} : {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
-  const j = await r.json().catch(() => ({}));
+  const text = await r.text();
+  let j = {};
+  try { j = text ? JSON.parse(text) : {}; } catch (e) { if (r.ok) throw new Error("The app sent an unreadable answer."); }
   if (!r.ok) throw new Error(j.error || r.statusText);
   return j;
 }
@@ -381,24 +383,45 @@ $("#start").onclick = async () => {
   try { await api("/api/start", body); poll(); } catch (e) { alert(e.message); }
 };
 $("#cancel").onclick = () => api("/api/cancel", {});
-let polling = false;
+let polling = false, pollToken = 0;
 async function poll(){
-  if (polling) return; polling = true;
-  for (;;) {
-    const s = await api("/api/status");
-    $("#statusPanel").hidden = s.state === "idle";
-    $("#start").disabled = s.state === "running";
-    $("#statusTitle").textContent = {running:"Testing…", done:"Finished", error:"Something went wrong", cancelled:"Stopped"}[s.state] || "";
-    $("#bar").style.width = s.total ? (100 * s.done / s.total) + "%" : "3%";
-    $("#count").textContent = s.total ? `${s.done} of ${s.total} games played` : "Preparing…";
-    $("#lastLine").textContent = s.error || (s.log.length ? s.log[s.log.length - 1].replace(/^\S+\s+/, "") : "");
-    $("#cancel").hidden = s.state !== "running";
-    const log = $("#log"), atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
-    log.textContent = s.log.join("\n"); if (atEnd) log.scrollTop = log.scrollHeight;
-    if (s.state !== "running") { polling = false; if (s.state === "done") { await loadHistory(); showReport(s.report_id); } return; }
-    await new Promise(r => setTimeout(r, 2000));
+  const token = ++pollToken;          // a newer poll() replaces an older one
+  polling = true;
+  let failures = 0;
+  try {
+    while (token === pollToken) {
+      let s;
+      try { s = await api("/api/status"); failures = 0; }
+      catch (e) {
+        failures++;
+        $("#lastLine").textContent = failures > 2 ? "Can’t reach the app – is the Terminal window still open? Retrying…" : "";
+        await new Promise(r => setTimeout(r, Math.min(10000, 2000 * failures)));
+        continue;
+      }
+      $("#statusPanel").hidden = s.state === "idle";
+      $("#start").disabled = s.state === "running";
+      $("#statusTitle").textContent = {running:"Testing…", done:"Finished", error:"Something went wrong", cancelled:"Stopped"}[s.state] || "";
+      $("#bar").style.width = s.total ? (100 * s.done / s.total) + "%" : "3%";
+      $("#count").textContent = s.total ? `${s.done} of ${s.total} games played` : "Preparing…";
+      $("#lastLine").textContent = s.error || (s.log.length ? s.log[s.log.length - 1].replace(/^\S+\s+/, "") : "");
+      $("#cancel").hidden = s.state !== "running";
+      const log = $("#log"), atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
+      log.textContent = s.log.join("\n"); if (atEnd) log.scrollTop = log.scrollHeight;
+      if (s.state !== "running") {
+        if (s.state === "done" && s.report_id) {
+          await loadHistory().catch(() => {});
+          $("#history").value = s.report_id;
+          await showReport(s.report_id);
+        }
+        return;
+      }
+      await new Promise(r => setTimeout(r, 2000));
+    }
+  } finally {
+    if (token === pollToken) polling = false;
   }
 }
+document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
 
 // ---------- report
 function podSvg(g){
@@ -432,7 +455,30 @@ function md(text){
 const list = (head, rows) => `<div class="list scroll"><table class="t"><tr>${head.map(c => `<th class="${c.r ? "r" : ""}">${c.t ?? c}</th>`).join("")}</tr>${rows.join("")}</table></div>`;
 
 async function showReport(id){
-  let rep; try { rep = await api("/api/report" + (id ? "?id=" + encodeURIComponent(id) : "")); } catch (e) { return; }
+  let rep;
+  try { rep = await api("/api/report" + (id ? "?id=" + encodeURIComponent(id) : "")); }
+  catch (e) { $("#report").innerHTML = reportError(id, e.message); return; }
+  try { renderReport(rep); }
+  catch (e) { console.error(e); $("#report").innerHTML = reportError(rep.id || id, "This report couldn’t be shown here (" + e.message + "). The PDF may still work."); bindOpen(); }
+}
+function reportError(id, msg){
+  const q = id ? "?id=" + encodeURIComponent(id) : "";
+  return `<div class="card"><div class="status-title">Report</div><p class="note err">${esc(msg)}</p>
+    <div class="actions"><a class="btn small tint" style="display:inline-flex;align-items:center" href="/api/report.pdf${q}">Download PDF</a>
+    <button class="btn small tint" data-open="${esc(id || "")}">Show in folder</button></div></div>`;
+}
+function groupCasts(list){
+  // "Capsize (cast 3× – why)", "Capsize (cast 4× – why)" -> "Capsize ×2 (why)"
+  const out = [], idx = {};
+  for (const x of list) {
+    const m = x.match(/^(.*?) \(cast \d+× – (.*)\)$/), name = m ? m[1] : x;
+    if (idx[name] != null) { const o = out[idx[name]]; o.n++; if (m) o.why = m[2]; }
+    else { idx[name] = out.length; out.push({name, n: 1, why: m ? m[2] : null}); }
+  }
+  return out.map(o => o.name + (o.n > 1 ? ` ×${o.n}` : "") + (o.why ? ` (${o.why})` : ""));
+}
+function bindOpen(){ const ob = $("#report [data-open]"); if (ob) ob.onclick = () => api("/api/open-folder", {id: ob.dataset.open}); }
+function renderReport(rep){
   const R = rep.results, A = rep.analysis, me = R.standings.find(s => s.id === "D01"), n = R.standings.length;
   const cmd = rep.deck.commanders.join(" & ");
   const title = rep.deck.name && rep.deck.name !== "Your deck" ? rep.deck.name : cmd;
@@ -441,6 +487,7 @@ async function showReport(id){
   const mine = R.games.filter(g => g.players.D01).sort((a, b) => a.round - b.round);
   let h = `<h2 class="r-title">${esc(title)}</h2>
     <p class="r-sub">${esc([title !== cmd ? cmd : null, "Bracket " + rep.bracket, n + " decks", R.rounds + " rounds", rep.created, rep.demo ? "demo data" : null].filter(Boolean).join(", "))}</p>
+    ${rep.pdf_error ? `<p class="note err">The PDF couldn’t be created: ${esc(rep.pdf_error)}. Clicking Download PDF tries again.</p>` : ""}
     <div class="actions"><a class="btn small" style="background:var(--blue);color:#fff;display:inline-flex;align-items:center" href="/api/report.pdf?id=${encodeURIComponent(rep.id)}">Download PDF</a>
       <button class="btn small tint" data-open="${esc(rep.id)}">Show in folder</button></div>
     <div class="tiles">`;
@@ -530,7 +577,7 @@ async function showReport(id){
         const notes = T.events.map(e => fix(e.text));
         [dmg("took", T.taken, T.taken_other), dmg("dealt", T.dealt, T.dealt_other)].forEach(x => x && notes.push(x));
         const life = `<b>${T.life.D01 ?? "–"}</b> · ` + opp.map(s => T.life[s] ?? "–").join(" · ");
-        return `<tr><td>${T.round}</td><td>${esc((T.cast_detail || T.cast).join(", ")) || '<span class="dim">–</span>'}</td><td class="r">${life}</td><td class="dim">${esc(notes.join("; "))}</td></tr>`; });
+        return `<tr><td>${T.round}</td><td>${esc(groupCasts(T.cast_detail || T.cast).join(", ")) || '<span class="dim">–</span>'}</td><td class="r">${life}</td><td class="dim">${esc(notes.join("; "))}</td></tr>`; });
       return `<details class="moment"><summary><span>Round ${g.round}: ${ord(p.place)} place</span><span class="dim">vs ${esc(opp.map(s => names[s]).join(", "))}</span></summary>
         <div class="scroll"><table class="t"><tr><th>#</th><th>Your spells</th><th class="r">Life (you · others)</th><th>Notes</th></tr>${rows.join("")}</table></div></details>`;
     }).join("");
@@ -538,7 +585,8 @@ async function showReport(id){
   if (R.errors.length) h += `<details class="moment"><summary>Problems during the run</summary><pre id="log">${esc(R.errors.join("\n\n"))}</pre></details>`;
   h += `<p class="note" style="margin-top:20px">Forge’s AI is a decent but imperfect pilot: look for patterns across rounds rather than single games.</p>`;
   $("#report").innerHTML = h;
-  const ob = $("#report [data-open]"); if (ob) ob.onclick = () => api("/api/open-folder", {id: ob.dataset.open});
+  bindOpen();
+  $("#report").scrollIntoView({behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start"});
 }
 
 async function loadHistory(){

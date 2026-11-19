@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [3.1.1] - 2026-11-19
+
+### Fixed
+- After a second run in the same browser session, the page could stay on the old report. Progress
+  checks now retry after a hiccup (for example after the computer slept) instead of stopping, and
+  the newest report always opens when a run finishes.
+- The PDF couldn't be created when a single round of a game had very many spells (e.g. wheel or
+  buyback decks). Repeated casts are grouped ("Capsize ×7"), very long rows are shortened, and if
+  something still doesn't fit, the PDF is created without the key-moments appendix.
+- If a report can't be shown or its PDF can't be created, the app now says so and offers to try
+  again, instead of silently keeping the old report.
+
 ## [3.1.0] - 2026-11-19
 
 ### Changed
