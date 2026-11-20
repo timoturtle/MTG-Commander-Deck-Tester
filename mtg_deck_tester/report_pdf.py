@@ -424,15 +424,22 @@ def _build_pdf(rep, path, moments_mode="full"):
             return [Paragraph(t(title), S["h3"]), Paragraph(t(note), S["footnote"]), Spacer(1, 3),
                     _list(rows, [w * 0.7, w * 0.3], S)]
         w = (W - 10) / 2
-        need = A.get("min_games_never_cast", 10)
+        n_g = A.get("games_played") or 0
         if cuts:
-            left = col("Cards to reconsider", f"Never cast in {A.get('games_played')} games",
-                       [(c["card"], f"MV {c['cmc']:g}" if c.get("cmc") is not None else "") for c in cuts], w)
+            rows_c = [[Paragraph(t(c["card"]), S["cell"]),
+                       Paragraph("–" if c.get("drawn_by_t8") is None else f"{c['drawn_by_t8']:.0f}%", S["cellr"]),
+                       Paragraph("–" if c.get("not_drawn_chance") is None else f"{c['not_drawn_chance']}%", S["cellr"])]
+                      for c in cuts]
+            left = [Paragraph("Cards to reconsider", S["h3"]),
+                    Paragraph(t(f"Never cast in {n_g} games. “Not drawn” is the chance the deck simply never drew "
+                                f"the card in {n_g} games – the higher it is, the less this means."), S["footnote"]),
+                    Spacer(1, 3),
+                    _list(rows_c, [w * 0.52, w * 0.22, w * 0.26], S,
+                          header=[Paragraph("Card", S["th"]), Paragraph("Drawn by T8", S["thr"]),
+                                  Paragraph("Not drawn", S["thr"])])]
         else:
             left = [Paragraph("Cards to reconsider", S["h3"]),
-                    Paragraph(t(f"Shown from {need} games of your deck on (this run: {A.get('games_played')}). "
-                                "With fewer games, a card that was never cast was often just never drawn. "
-                                "Use more rounds to see this list."), S["footnote"])]
+                    Paragraph(t(f"Every non-land card was cast at least once in {n_g} games."), S["footnote"])]
         right = col("Popular in the opponent decks", "Not in your deck · price · ★ fits a weak point",
                     [(c["card"] + (" ★" if c.get("fits_need") else ""), eur(c.get("price"))) for c in adds[:10]], w)
         tb = Table([[left, "", right]], colWidths=[w, 10, w])

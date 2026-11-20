@@ -585,8 +585,11 @@ function renderReport(rep){
   h += `<h3 class="sec">How to improve</h3><ul class="plain">${(A.suggestions.length ? A.suggestions : ["Run more rounds for a clearer picture."]).map(s => `<li>${esc(s)}</li>`).join("")}</ul>`;
   if (A.add_candidates && A.add_candidates.length) h += `<h4>Popular in the opponent decks</h4>` + list(["Card", {t:"Decks", r:1}, {t:"Price", r:1}],
     A.add_candidates.slice(0, 8).map(c => `<tr><td>${esc(c.card)}${c.fits_need ? ' <span class="good">★</span>' : ""}</td><td class="r">${c.in_decks}</td><td class="r">${eur(c.price)}</td></tr>`));
-  if (A.cut_candidates && A.cut_candidates.length) h += `<p class="note">Never cast in ${A.games_played} games: ${A.cut_candidates.map(c => esc(c.card)).join(", ")}</p>`;
-  else if (A.min_games_never_cast) h += `<p class="note">“Never cast” cards are listed from ${A.min_games_never_cast} games of your deck on (this run: ${A.games_played}); with fewer games, those cards were often just never drawn.</p>`;
+  if (A.cut_candidates && A.cut_candidates.length) {
+    h += `<h4>Cards to reconsider</h4><p class="note">Never cast in ${A.games_played} games. “Not drawn” is the chance the deck simply never drew the card in ${A.games_played} games – the higher it is, the less this means.</p>` +
+      list(["Card", {t:"Drawn by turn 8", r:1}, {t:"Not drawn", r:1}], A.cut_candidates.map(c =>
+        `<tr><td>${esc(c.card)}</td><td class="r">${c.drawn_by_t8 == null ? "–" : Math.round(c.drawn_by_t8) + "%"}</td><td class="r">${c.not_drawn_chance == null ? "–" : c.not_drawn_chance + "%"}</td></tr>`));
+  }
 
   const E = rep.edhrec;
   if (E) {

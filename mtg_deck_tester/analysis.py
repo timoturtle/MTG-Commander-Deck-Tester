@@ -268,10 +268,9 @@ def weak_points_and_suggestions(results, deck, profile, card_db, opponents, brac
 
     # ---- cut candidates: rarely cast, expensive
     perf, n_games = card_performance(results, deck, card_db)
-    cuts = []
-    if n_games >= MIN_GAMES_NEVER_CAST:
-        cuts = [r for r in perf if r["cast_games"] == 0 and (r["cmc"] or 0) >= 5][:6]
-        cuts += [r for r in perf if r["cast_games"] == 0 and r not in cuts][: max(0, 6 - len(cuts))]
+    # never cast in testing: always listed; with few games the report shows how likely it is that the
+    # card simply wasn't drawn (goldfish), and cut suggestions only use it from MIN_GAMES_NEVER_CAST games
+    cuts = [dict(r) for r in perf if r["cast_games"] == 0] if n_games else []
 
     # ---- add candidates: popular in the similar decks, legal in your colours
     ident = set(profile["identity"])

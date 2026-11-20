@@ -32,7 +32,7 @@ of the two is distributed. Forge's license applies to Forge itself.
 
 | Service | Used for | Notes |
 |---|---|---|
-| [Scryfall API](https://scryfall.com/docs/api) | Card names, colour identity, card types, prices (Cardmarket EUR / USD) | Used per Scryfall's API guidelines (identifying User-Agent, rate limits, local caching). Card data is © Wizards of the Coast. |
+| [Scryfall API](https://scryfall.com/docs/api) | Card names, colour identity, card types, prices (Cardmarket EUR / USD) | Used per Scryfall's API guidelines: identifying User-Agent, its documented rate limits (2 requests per second for searches and collection lookups, 10 for other endpoints), pausing when asked (HTTP 429), and a local cache. Card data is © Wizards of the Coast. |
 | [Commander Spellbook](https://commanderspellbook.com) | Finding combos in decklists | Public API of its open-source backend ([commander-spellbook-backend](https://github.com/SpaceCowMedia/commander-spellbook-backend)), used at a low request rate with local caching. Combo data belongs to Commander Spellbook and its contributors. |
 | [EDHREC](https://edhrec.com) | Cards commonly played with your commander | No official API; the app reads the public JSON the EDHREC website uses (json.edhrec.com), at a low request rate with a one-week cache. Data belongs to EDHREC. |
 | [Archidekt](https://archidekt.com) | Finding popular public decks, importing decks by link | Public but undocumented API, used at a low request rate. Deck lists belong to their authors. |

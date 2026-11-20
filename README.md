@@ -267,16 +267,19 @@ a section for each card:
 
 - **Prices** are for the **cheapest paper printing** of each card (Cardmarket trend price in EUR via
   Scryfall), so expensive special printings in a decklist don't inflate its value. Cards whose
-  standard printing costs under €0.30 aren't looked up individually. Prices are refreshed weekly.
+  standard printing costs under €0.50 (€2 in opponent decks) aren't looked up individually. Prices
+  are refreshed weekly. The app stays within Scryfall's rate limits (2 searches per second, about
+  12 cards per search) and pauses when Scryfall asks it to.
 - **Recommended upgrades:** every possible addition gets an impact score from how often players
   run it with your commander on EDHREC, its synergy with your commander, the opponent decks,
   whether it fixes one of your weak points (ramp, draw, removal, board wipes, interaction) and
   whether it completes a combo allowed in your bracket. Each addition is paired with a cut: cards
   you never cast in testing or that are rarely played with your commander. Cards that fill a role
   your deck is already short on are never suggested as cuts.
-- **Cuts based on testing:** "never cast in testing" is only used from 10 games of your deck on
-  (e.g. 10 rounds, or two runs' worth). With fewer games, a card that was never cast was often just
-  never drawn, so it isn't suggested as a cut.
+- **Cards to reconsider:** non-land cards your deck never cast during the test. Next to each card
+  the report shows how often the deck draws it by turn 8 (goldfish) and the chance it simply
+  wasn't drawn in any of your games. A high "not drawn" chance means the result says little.
+  Recommended cuts only use "never cast" from 10 games of your deck on.
 - **Basic lands** are never suggested as additions.
 - **Budget:** enter an amount and the app picks the highest-impact swaps that fit it. Without a
   budget it shows the highest-impact swaps regardless of price.

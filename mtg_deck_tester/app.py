@@ -164,7 +164,7 @@ def _run_job(req):
         bracket = int(req.get("bracket") or 0) or est
         job.say(f"Bracket {bracket}" + ("" if req.get("bracket") else f" (estimated: {why})"))
         if not DEMO:
-            CARD_DB.cheapest(deck.all_names(), 0.3, log=job.say, label=" in your deck")
+            CARD_DB.cheapest(deck.all_names(), 0.5, log=job.say, label=" in your deck")
         my_value, unpriced = deck_value(deck, CARD_DB)
         if not DEMO:
             job.say(f"Your deck is worth about €{my_value:,.0f} in its cheapest printings"
@@ -231,7 +231,7 @@ def _run_job(req):
         if not DEMO:
             job.say("Preparing opponent decks for Forge...")
             CARD_DB.resolve({n for o in opps for n in o.all_names()})
-            CARD_DB.cheapest([n for o in opps for n in o.all_names()], 1.0, log=job.say, label=" in the opponent decks")
+            CARD_DB.cheapest([n for o in opps for n in o.all_names()], 2.0, log=job.say, label=" in the opponent decks")
             idents = sorted(opponents.identity_str(opponents._identity(o, CARD_DB)) for o in opps)
             job.say("Colour identities in the field: " + ", ".join(idents))
         for o in opps:
@@ -294,6 +294,16 @@ def _run_job(req):
 
         job.say("Analysing results...")
         ana = analysis.weak_points_and_suggestions(res, deck, prof, CARD_DB, opps, bracket)
+        # how likely is it that a never-cast card simply wasn't drawn in this many games?
+        drawn = ((combo_data or {}).get("goldfish") or {}).get("card_drawn_by_t8") or {}
+        n_my = ana.get("games_played") or 0
+        for c in ana["cut_candidates"]:
+            p8 = drawn.get(c["card"])
+            c["drawn_by_t8"] = p8
+            c["not_drawn_chance"] = round(100 * (1 - p8 / 100) ** n_my) if p8 is not None and n_my else None
+        ana["cut_candidates"].sort(key=lambda c: (c["not_drawn_chance"] if c["not_drawn_chance"] is not None else 100,
+                                                  -(c.get("cmc") or 0)))
+        ana["cut_candidates"] = ana["cut_candidates"][:10]
         if combo_data:
             combos.explain_commander_timing(ana, combo_data)
             combo_data["forge_check"] = combos.forge_crosscheck(combo_data, res, deck, CARD_DB)
@@ -316,7 +326,7 @@ def _run_job(req):
         if not DEMO:
             extra = [a["card"] for a in ana["add_candidates"]] + [a["missing"] for a in (combo_data or {}).get("almost", [])]
             CARD_DB.resolve(extra)
-            CARD_DB.cheapest(extra, 0.3)
+            CARD_DB.cheapest(extra, 1.0)
         for a in ana["add_candidates"]:
             a["price"] = CARD_DB.price(a["card"])
             a["edhrec"] = (edh_cards.get(a["card"]) or {}).get("inclusion")
@@ -491,7 +501,7 @@ class Handler(BaseHTTPRequestHandler):
             prof = analysis.deck_profile(deck, CARD_DB)
             est, why = analysis.estimate_bracket(prof)
             if not DEMO and deck.size:
-                CARD_DB.cheapest(deck.all_names(), 0.3)
+                CARD_DB.cheapest(deck.all_names(), 0.5)
             value = deck_value(deck, CARD_DB)[0] if not DEMO and deck.size else None
             return self._send(200, {"commanders": deck.commanders, "size": deck.size, "warnings": warns,
                                     "unknown": missing, "profile": prof, "bracket_estimate": est,

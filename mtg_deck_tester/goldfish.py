@@ -235,7 +235,12 @@ class Goldfish:
                 f_seen[fname] = 0  # commander or in the opening hand
         res["f_seen"], res["f_cast"] = f_seen, f_cast
 
+        seen_idx = {i: 0 for i in hand}
+        res["seen_idx"] = seen_idx
+
         def note_seen(i):
+            if i not in seen_idx:
+                seen_idx[i] = now[0]
             for fname, (kind, ref) in self.focus.items():
                 if kind == "lib" and i in ref and fname not in f_seen:
                     f_seen[fname] = now[0]
@@ -458,6 +463,16 @@ class Goldfish:
 
         combo_stats = [by_turn([g["combo"][k] for g in games]) for k in range(len(self.combos))]
 
+        # every non-land card: in how many games is (any copy of) it drawn by turn 8?
+        by_name = {}
+        for i, c in enumerate(self.cards):
+            if not c.land:
+                by_name.setdefault(c.name, []).append(i)
+        drawn_t8 = {}
+        for name, idxs in by_name.items():
+            hits = sum(1 for g in games if any(g["seen_idx"].get(i, 99) <= 8 for i in idxs))
+            drawn_t8[name] = pct(hits)
+
         def kill_by_turn(turns):
             out = {f"t{t}": pct(sum(1 for x in turns if x is not None and x <= t)) for t in (6, 8, 10, 12, 15)}
             done = sorted(x for x in turns if x is not None)
@@ -490,6 +505,7 @@ class Goldfish:
             "combo_each": combo_stats,
             "simulated_combos": len(self.combos),
             "win": win,
+            "card_drawn_by_t8": drawn_t8,
             "focus": {f: {"seen_opening": pct(sum(1 for g in games if g["f_seen"].get(f) == 0)),
                           "seen_by_t4": pct(sum(1 for g in games if g["f_seen"].get(f, 99) <= 4)),
                           "seen_by_t8": pct(sum(1 for g in games if g["f_seen"].get(f, 99) <= 8)),

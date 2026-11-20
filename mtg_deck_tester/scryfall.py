@@ -5,7 +5,7 @@ import threading
 import time
 import urllib.parse
 
-from .net import get_json, post_json
+from .net import blocked_for, get_json, post_json
 
 CACHE_VERSION = 2
 USD_TO_EUR = 0.9  # rough fallback when a card has no Cardmarket price
@@ -87,9 +87,10 @@ class CardDB:
                 return round(e[k] * USD_TO_EUR, 2)
         return None
 
-    def cheapest(self, names, min_price=0.5, log=None, label=""):
-        """Look up the cheapest paper printing of every card whose default printing costs at least min_price
-        (or has no price). One Scryfall search per card; results are cached for a week."""
+    def cheapest(self, names, min_price=1.0, log=None, label=""):
+        """Look up the cheapest paper printing of every card whose standard printing costs at least
+        min_price (or has no price). About 12 cards share one Scryfall search, Scryfall's limit of
+        2 searches per second is respected, and results are cached for a week."""
         todo = []
         for n in dict.fromkeys(names):
             e = self.get(n)
@@ -100,72 +101,59 @@ class CardDB:
             p = e.get("eur") if e.get("eur") is not None else e.get("usd")
             if p is None or p >= min_price:
                 todo.append(n)
-        if todo and log:
+        if not todo:
+            return
+        if log:
             log(f"Looking up the cheapest printing of {len(todo)} card(s){label}...")
         changed = False
-        for i, n in enumerate(todo):
-            e = self.get(n)
-            q = f'!"{e["name"].split(" // ")[0]}" game:paper -set_type:memorabilia -is:oversized'
+        for start in range(0, len(todo), 12):
+            if blocked_for("api.scryfall.com"):
+                if log:
+                    log("Scryfall asked for a pause; using standard printings for the remaining prices.")
+                break
+            batch = todo[start:start + 12]
+            fronts = {}
+            for n in batch:
+                fronts[self.get(n)["name"].split(" // ")[0].lower()] = n
+            q = "(" + " or ".join(f'!"{f}"' for f in {self.get(n)["name"].split(" // ")[0] for n in batch}) + \
+                ") game:paper -set_type:memorabilia -is:oversized"
             url = ("https://api.scryfall.com/cards/search?unique=prints&order=eur&dir=asc&q="
                    + urllib.parse.quote(q))
-            try:
-                data = get_json(url, host_gap=0.11, retries=2)
-            except Exception:
-                if log:
-                    log("Scryfall can't be reached for prices right now; using standard printings.")
-                break  # don't wait on every remaining card
-            eurs, usds = [], []
-            for c in (data or {}).get("data", []):
-                pr = c.get("prices") or {}
-                for key, bucket in (("eur", eurs), ("usd", usds)):
-                    try:
-                        if pr.get(key) is not None:
-                            bucket.append(float(pr[key]))
-                    except (TypeError, ValueError):
-                        pass
+            best = {}
+            pages = 0
+            while url and pages < 8:
+                try:
+                    data = get_json(url, retries=1)
+                except Exception:
+                    data = None
+                if not data:
+                    break
+                for c in data.get("data", []):
+                    key = c.get("name", "").split(" // ")[0].lower()
+                    if key not in fronts:
+                        continue
+                    pr = c.get("prices") or {}
+                    b = best.setdefault(key, {"eur": [], "usd": []})
+                    for k in ("eur", "usd"):
+                        try:
+                            if pr.get(k) is not None:
+                                b[k].append(float(pr[k]))
+                        except (TypeError, ValueError):
+                            pass
+                url = data.get("next_page") if data.get("has_more") else None
+                pages += 1
             with self.lock:
-                e["eur_min"] = min(eurs) if eurs else None
-                e["usd_min"] = min(usds) if usds else None
-                e["min_fetched"] = int(time.time())
-            changed = True
-            if log and i and i % 50 == 0:
-                log(f"  ...{i} of {len(todo)}")
+                for key, n in fronts.items():
+                    e = self.get(n)
+                    b = best.get(key)
+                    if b is None:
+                        continue  # not found: keep the standard printing's price
+                    e["eur_min"] = min(b["eur"]) if b["eur"] else None
+                    e["usd_min"] = min(b["usd"]) if b["usd"] else None
+                    e["min_fetched"] = int(time.time())
+                    changed = True
         if changed:
             self.save()
-
-    def resolve(self, names):
-        """Look up all names (cached). Returns list of names not found."""
-        missing = sorted({n for n in names if not self._fresh(self._key(n))})
-        not_found = []
-        for i in range(0, len(missing), 75):
-            chunk = missing[i:i + 75]
-            # Scryfall matches the front face of double-faced cards by name
-            ids = [{"name": n.split(" // ")[0] if " // " in n else n} for n in chunk]
-            res = post_json("https://api.scryfall.com/cards/collection", {"identifiers": ids})
-            found = {}
-            for c in res.get("data", []):
-                info = self._info(c)
-                for alias in {c["name"], info["forge_name"]} | {f["name"] for f in c.get("card_faces", [])}:
-                    found[self._key(alias)] = info
-            with self.lock:
-                self.cards.update(found)
-            for n in chunk:
-                if not self._fresh(self._key(n)) and not self._fresh(self._key(n.split(" // ")[0])):
-                    not_found.append(n)
-                elif not self._fresh(self._key(n)):
-                    self.cards[self._key(n)] = self.cards[self._key(n.split(" // ")[0])]
-        still = []
-        for n in not_found:  # fuzzy fallback for typos / odd formatting
-            c = get_json("https://api.scryfall.com/cards/named?fuzzy=" + urllib.parse.quote(n), host_gap=0.12)
-            if c and c.get("object") == "card":
-                with self.lock:
-                    self.cards[self._key(n)] = self._info(c)
-            else:
-                still.append(n)
-        if missing:
-            self.save()
-        return still
-
 
 def deck_value(deck, card_db):
     """(total EUR, number of cards without a price)."""

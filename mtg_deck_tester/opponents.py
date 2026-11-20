@@ -97,7 +97,7 @@ def pick(sources, user_deck, user_identity, bracket, wanted, card_db, log, manua
                 pass
             if value_target:
                 from .scryfall import deck_value
-                card_db.cheapest(d.all_names(), 2.0)  # the expensive cards decide the value
+                card_db.cheapest(d.all_names(), 3.0)  # the expensive cards decide the value
                 d.value = deck_value(d, card_db)[0]
             moved = clean_commanders(d, card_db)
             if moved:

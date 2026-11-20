@@ -1,6 +1,7 @@
 """Run Forge's headless simulation mode and parse its game logs."""
 from __future__ import annotations
 import glob
+import hashlib
 import os
 import re
 import shutil
@@ -141,10 +142,13 @@ def ensure_helper(jar, java, cache_dir, log=print):
     key = os.path.basename(jar)
     if key in _helper_state:
         return _helper_state[key]
-    out_dir = os.path.join(cache_dir, "handsim", re.sub(r"[^A-Za-z0-9._-]", "_", key))
+    # the compiled helper is cached per Forge jar AND per helper source content, so an app update
+    # always rebuilds it (file dates can't be trusted after copying/unzipping)
+    with open(HELPER_SRC, "rb") as f:
+        src_hash = hashlib.sha1(f.read()).hexdigest()[:12]
+    out_dir = os.path.join(cache_dir, "handsim", re.sub(r"[^A-Za-z0-9._-]", "_", key) + "-" + src_hash)
     result = None
-    if os.path.exists(os.path.join(out_dir, "HandSim.class")) and \
-            os.path.getmtime(os.path.join(out_dir, "HandSim.class")) >= os.path.getmtime(HELPER_SRC):
+    if os.path.exists(os.path.join(out_dir, "HandSim.class")):
         result = out_dir
     else:
         javac = find_javac(java)
@@ -469,7 +473,11 @@ def parse_game(stdout, deck_ids, commanders_of, cards_of, focus="D01"):
         return owners[0] if len(owners) == 1 else None
 
     # key moments for the focus deck, one entry per table round
-    timeline, rnd, first_seat = [], 0, None
+    timeline, rnd, first_seat, prev_rel = [], 0, None, None
+    seat_of = {}
+    for m0 in re.finditer(r"Ai\((\d+)\)-(D\d\d)", stdout):
+        seat_of.setdefault(m0.group(2), int(m0.group(1)))
+    n_seats = max(len(seat_of), 1)
     round_of_index = {}
     killer_card = {}
     cast_count, last_move = {}, {}   # (deck, card) -> casts so far / how it last came back
@@ -485,14 +493,19 @@ def parse_game(stdout, deck_ids, commanders_of, cards_of, focus="D01"):
             tm0 = TURN.match(msg)
             pm0 = PLAYER.search(tm0.group(2)) if tm0 else None
             if pm0:
+                # a new round starts when the turn passes "back around the table" in seating order,
+                # so it keeps working after the player who went first has been knocked out
+                seat = seat_of.get(pm0.group(1), 0)
                 if first_seat is None:
-                    first_seat = pm0.group(1)
-                if pm0.group(1) == first_seat:
+                    first_seat = seat
+                rel = (seat - first_seat) % n_seats
+                if prev_rel is None or rel < prev_rel:
                     if timeline:
                         timeline[-1]["life"] = {d: P[d].life for d in P}
                     rnd += 1
                     new_round()
                     round_of_index[i] = rnd
+                prev_rel = rel
         T = timeline[-1] if timeline else None
         if T is not None and focus in P:
             if cap == "Land" and msg.startswith(f"Ai(") and PLAYER.match(msg) and PLAYER.match(msg).group(1) == focus \
@@ -598,12 +611,12 @@ def parse_game(stdout, deck_ids, commanders_of, cards_of, focus="D01"):
                         elif src == focus:
                             timeline[-1]["dealt"] += amount
                             timeline[-1]["dealt_" + kind] += amount
-                    if src and src != victim and src in P:
-                        killer_card[victim] = CARD_ID.sub("", dm.group(1).strip()) + ("" if combat else " (non-combat)")
                     if src == focus and src != victim:
                         cd0 = P[focus].card_damage.setdefault(CARD_ID.sub("", dm.group(1).strip()),
                                                               {"combat": 0, "noncombat": 0})
                         cd0["combat" if combat else "noncombat"] += amount
+                    if src and src != victim and src in P:
+                        killer_card[victim] = CARD_ID.sub("", dm.group(1).strip()) + ("" if combat else " (non-combat)")
                         P[src].damage_dealt += amount
                         if combat:
                             P[src].damage_dealt_combat += amount

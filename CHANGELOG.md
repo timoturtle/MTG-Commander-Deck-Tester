@@ -4,6 +4,25 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [3.3.1] - 2026-11-19
+
+### Fixed
+- Opponents showed 0 damage dealt, and some knock-outs had no culprit (since 3.3.0).
+- Key moments lumped all remaining turns into one "round" once the player who went first was
+  knocked out, which made it look like spells (or the commander) were cast many times in one turn.
+  Rounds now follow the seating order.
+- After an update, the Forge helper could keep running an older version (copying files keeps old
+  file dates). It is now rebuilt whenever its source changes, so returns like The Locust God's
+  ("returned from the graveyard to hand") are recorded.
+- Scryfall rate limit warnings: searches now respect Scryfall's 2-per-second limit, price lookups are
+  batched (about 12 cards per search, roughly 10× fewer requests), fewer cheap cards are looked up,
+  and the app pauses for as long as Scryfall asks after an HTTP 429.
+
+### Changed
+- "Cards to reconsider" is shown for short runs again, with each card's goldfish draw chance by
+  turn 8 and the chance it simply wasn't drawn in your games. Cut suggestions still only use
+  "never cast" from 10 games on.
+
 ## [3.3.0] - 2026-11-19
 
 ### Added
