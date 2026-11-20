@@ -4,6 +4,17 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [3.3.2] - 2026-11-19
+
+### Fixed
+- "'CardDB' object has no attribute 'resolve'" when starting a test: the Scryfall card lookup was
+  accidentally removed in 3.3.1. Restored, now within Scryfall's rate limits.
+
+### Added
+- Automated tests (`tests/`), run by GitHub Actions on macOS, Windows and Linux for every push.
+  One test checks that every card-database function the app uses exists, which would have caught
+  this bug.
+
 ## [3.3.1] - 2026-11-19
 
 ### Fixed

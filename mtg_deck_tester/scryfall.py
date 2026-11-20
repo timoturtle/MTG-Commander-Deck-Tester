@@ -155,6 +155,45 @@ class CardDB:
         if changed:
             self.save()
 
+    def resolve(self, names):
+        """Look up card data for all names (cached for a week). Returns the names Scryfall doesn't know."""
+        missing = sorted({n for n in names if n and not self._fresh(self._key(n))})
+        not_found = []
+        for i in range(0, len(missing), 75):  # the collection endpoint takes 75 cards per request
+            chunk = missing[i:i + 75]
+            # Scryfall matches the front face of double-faced cards by name
+            ids = [{"name": n.split(" // ")[0] if " // " in n else n} for n in chunk]
+            res = post_json("https://api.scryfall.com/cards/collection", {"identifiers": ids}, host_gap=0.6)
+            found = {}
+            for c in res.get("data", []):
+                info = self._info(c)
+                for alias in {c["name"], info["forge_name"]} | {f["name"] for f in c.get("card_faces", [])}:
+                    found[self._key(alias)] = info
+            with self.lock:
+                self.cards.update(found)
+            for n in chunk:
+                if not self._fresh(self._key(n)) and not self._fresh(self._key(n.split(" // ")[0])):
+                    not_found.append(n)
+                elif not self._fresh(self._key(n)):
+                    self.cards[self._key(n)] = self.cards[self._key(n.split(" // ")[0])]
+        still = []
+        for n in not_found:  # fuzzy fallback for typos / odd formatting (2 requests per second)
+            if blocked_for("api.scryfall.com"):
+                still.append(n)
+                continue
+            try:
+                c = get_json("https://api.scryfall.com/cards/named?fuzzy=" + urllib.parse.quote(n), host_gap=0.6)
+            except Exception:
+                c = None
+            if c and c.get("object") == "card":
+                with self.lock:
+                    self.cards[self._key(n)] = self._info(c)
+            else:
+                still.append(n)
+        if missing:
+            self.save()
+        return still
+
 def deck_value(deck, card_db):
     """(total EUR, number of cards without a price)."""
     total, unknown = 0.0, 0

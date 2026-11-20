@@ -465,6 +465,7 @@ mtg_deck_tester/
 ├── report_pdf.py   PDF report (ReportLab)
 ├── report_md.py    Markdown report
 ├── demo.py         fake games for trying the app without Forge
+tests/              automated checks (no network or Forge needed)
 └── static/index.html  the interface
 ```
 
@@ -476,6 +477,10 @@ source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 python -m mtg_deck_tester         # options: --demo  --port 8766  --no-browser
 ```
+
+**Tests:** `python -m unittest discover -s tests -v` runs quick checks without network, Java or
+Forge (card lookups, log parsing, goldfish, and a full demo run that builds a PDF). GitHub runs
+them automatically on every push, on macOS, Windows and Linux (see the Actions tab).
 
 `demo-mac.command` / `demo-windows.bat` start the app with fake games, so you can try the
 interface without Java or Forge. Linux works too with the commands above (not officially tested).
